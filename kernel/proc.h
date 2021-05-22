@@ -1,3 +1,4 @@
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -82,6 +83,12 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+struct metadata{
+  uint64 pte;
+  char* va;
+  int offset;
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -106,10 +113,15 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
+  // Pages suuport
   struct file *swapFile;
-
-  uint64 pagetofile[16];        //array of addresses
-  uint64 onram[16];
+  int numOfPages;
+  struct metadata pages[MAX_PAGES];        //array of addresses
 };
 
 
+// Help function declarations
+void init_metadat();
+void restart_page(struct metadata m);
+void copy_metadata(struct proc *p,struct proc *np);
+void copy_file(struct proc *p,struct proc *np);

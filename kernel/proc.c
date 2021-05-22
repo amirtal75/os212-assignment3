@@ -141,15 +141,31 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
-  for(int i =0; i<32; i++){
-    p->pages[i] = -1;
-  }
+  // Pages support
+  init_metadat();
+  p->swapFile = 0;
+  p->numOfPages = 0;
 
   if(p->pid > 2){
     createSwapFile(p);
   }
 
   return p;
+}
+
+// Pages support
+void init_metadat(){
+  struct proc* p = myproc();
+  for (int i = 0; i < MAX_PAGES; i++)
+  {
+    restart_page(p->pages[i]);
+  } 
+}
+
+void restart_page(struct metadata m){
+  m.offset = -1;
+  m.pte = 0;
+  m.va = 0;
 }
 
 // free a proc structure and the data hanging from it,
@@ -163,8 +179,8 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
-    if(p->pid >2){
-      removeSwapFile(p);}
+  p->swapFile = 0;
+  p->numOfPages = 0;
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -315,6 +331,10 @@ fork(void)
 
   pid = np->pid;
 
+  // Pages Support
+  np->numOfPages = p->numOfPages;
+  copy_metadata(p,np);
+  copy_file(p,np);
   release(&np->lock);
 
   acquire(&wait_lock);
@@ -326,6 +346,19 @@ fork(void)
   release(&np->lock);
 
   return pid;
+}
+
+void copy_metadata(struct proc *p,struct proc *np){
+  for (int i = 0; i < MAX_PAGES; i++)
+  {
+    np->pages[i].va = p->pages[i].va;    
+    np->pages[i].offset = p->pages[i].offset;
+    np->pages[i].pte = p->pages[i].pte;
+  }
+}
+
+void copy_file(struct proc *p,struct proc *np){
+  memmove(np->swapFile,p->swapFile,p->numOfPages);
 }
 
 // Pass p's abandoned children to init.
@@ -354,6 +387,10 @@ exit(int status)
   if(p == initproc)
     panic("init exiting");
 
+  //Pages support
+  if(p->pid >2){
+    removeSwapFile(p);
+  }
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd]){
@@ -666,36 +703,50 @@ procdump(void)
   }
 }
 
+/*
+  Search for a given page
+*/
+int find_existing_page(uint64 pageaddress){
+  struct proc *p = myproc();
+  
+  for(int i = 0; i < MAX_PAGES; i++){
+    if (p->pages[i].pte == pageaddress && 
+        p->pages[i].offset != -1)
+    {
+      return i;
+    }    
+  }
+  panic("Failed to find the page/PTE in the pages array");
+}
+
+/*
+  import a page from the swap file to the memory
+*/
 void
 swapin(uint64 pageaddress)
 {
   struct proc *p;
-  int index;
+  int index = find_existing_page(pageaddress);
+  
+  // convert PTE to physical address
+  uint64 pa = PTE2PA(p->pages[index].pte);
+  // extract offset and re-init to -1
+  int offset = index*PGSIZE;
+  p->pages[index].offset = -1;
 
-  for(int i = 0; i<32; i++){
-    index =i;
-    if(p->pages[i] == pageaddress)
-    goto found;
-  }
-  panic("address does not exist");
-
-  found:
-  uint64 physicaladdress = walkaddr(p->pagetable, pageaddress);
-  // question this move 
-  if(physicaladdress){
-    for(int i = 0; i<32; i++){
-      if(p->pages[i] == -1){
-        swapout(pageaddress);
-        break;
-      }
-    }
-  }
-  if(readFromSwapFile(p, (char*)physicaladdress, index*PGSIZE, PGSIZE) == -1){
+  uint64 va = PA2PTE(pa);
+  if(readFromSwapFile(p, (char*)va, offset, PGSIZE) == -1){
     panic("fail to read from the file");
   }
-  p->pages[index] = -1;
+
+  pageaddress |= PTE_V;
+  pageaddress &= ~PTE_PG;
+
 }
 
+/*
+  export a page from the memory to the swap file
+*/
 void 
 swapout(uint64 pageaddress)
 {
