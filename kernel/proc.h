@@ -107,6 +107,9 @@ struct proc {
   char name[16];               // Process name (debugging)
 
   struct file *swapFile;
+
+  uint64 pagetofile[16];        //array of addresses
+  uint64 onram[16];
 };
 
-//comment
+

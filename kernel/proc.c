@@ -141,6 +141,14 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  for(int i =0; i<32; i++){
+    p->pages[i] = -1;
+  }
+
+  if(p->pid > 2){
+    createSwapFile(p);
+  }
+
   return p;
 }
 
@@ -155,6 +163,8 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+    if(p->pid >2){
+      removeSwapFile(p);}
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -452,6 +462,7 @@ scheduler(void)
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
+        sfence_vma();
         c->proc = p;
         swtch(&c->context, &p->context);
 
@@ -652,5 +663,60 @@ procdump(void)
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
+  }
+}
+
+void
+swapin(uint64 pageaddress)
+{
+  struct proc *p;
+  int index;
+
+  for(int i = 0; i<32; i++){
+    index =i;
+    if(p->pages[i] == pageaddress)
+    goto found;
+  }
+  panic("address does not exist");
+
+  found:
+  uint64 physicaladdress = walkaddr(p->pagetable, pageaddress);
+  // question this move 
+  if(physicaladdress){
+    for(int i = 0; i<32; i++){
+      if(p->pages[i] == -1){
+        swapout(pageaddress);
+        break;
+      }
+    }
+  }
+  if(readFromSwapFile(p, (char*)physicaladdress, index*PGSIZE, PGSIZE) == -1){
+    panic("fail to read from the file");
+  }
+  p->pages[index] = -1;
+}
+
+void 
+swapout(uint64 pageaddress)
+{
+  struct proc *p;
+  int index;
+
+ for(int i = 0; i<32; i++){
+    index =i;
+    if(p->pages[i] == pageaddress)
+    goto found;
+  }
+  panic("address does not exist");
+
+  found:
+  uint64 physicaladdress = walkaddr(p->pagetable, pageaddress);
+  if(physicaladdress){
+    if(writeToSwapFile(p, (char*)physicaladdress, index*PGSIZE, PGSIZE) == -1){
+      panic("fail to write to the file");
+    }
+    p->pages[index] = pageaddress;
+
+
   }
 }
