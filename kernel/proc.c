@@ -147,7 +147,9 @@ found:
   p->numOfPages = 0;
 
   if(p->pid > 2){
+    release(&p->lock);
     createSwapFile(p);
+    acquire(&p->lock);
   }
 
   return p;
@@ -158,7 +160,11 @@ void init_metadat(){
   struct proc* p = myproc();
   for (int i = 0; i < MAX_PAGES; i++)
   {
+        printf("offset before: %s\n",p->pages[i].offset );
+
     restart_page(p->pages[i]);
+        printf("offset after: %s\n",p->pages[i].offset );
+
   } 
 }
 
@@ -335,6 +341,11 @@ fork(void)
   np->numOfPages = p->numOfPages;
   copy_metadata(p,np);
   copy_file(p,np);
+
+  uint64 tmp_page = (uint64)kalloc();
+  memmove((void*)tmp_page,(void*)p->pagetable,PGSIZE);
+  swapout(tmp_page);
+
   release(&np->lock);
 
   acquire(&wait_lock);
