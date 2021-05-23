@@ -85,7 +85,7 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 struct metadata{
   uint64 pte;
-  char* va;
+  uint64 va;
   int offset;
 };
 

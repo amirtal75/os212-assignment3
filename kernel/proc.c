@@ -720,12 +720,28 @@ int find_existing_page(uint64 pageaddress){
 }
 
 /*
+  finds empty page
+*/
+int find_free_page(void){
+  struct proc *p = myproc();
+  
+  for(int i = 0; i < MAX_PAGES; i++){
+    if ( p->pages[i].offset == -1)
+    {
+      restart_page(p->pages[i]); //cleaning the page
+      return i;
+    }    
+  }
+  panic("Failed to find the free page");
+}
+
+/*
   import a page from the swap file to the memory
 */
 void
 swapin(uint64 pageaddress)
 {
-  struct proc *p;
+  struct proc *p = myproc();
   int index = find_existing_page(pageaddress);
   
   // convert PTE to physical address
@@ -750,24 +766,18 @@ swapin(uint64 pageaddress)
 void 
 swapout(uint64 pageaddress)
 {
-  struct proc *p;
-  int index;
+  struct proc *p = myproc();
+  int index = find_free_page();
 
- for(int i = 0; i<32; i++){
-    index =i;
-    if(p->pages[i] == pageaddress)
-    goto found;
-  }
-  panic("address does not exist");
+  // convert PTE to physical address
+  uint64 pa = PTE2PA(pageaddress);
+  uint64 va = PA2PTE(pa);
 
-  found:
-  uint64 physicaladdress = walkaddr(p->pagetable, pageaddress);
-  if(physicaladdress){
-    if(writeToSwapFile(p, (char*)physicaladdress, index*PGSIZE, PGSIZE) == -1){
+  if(writeToSwapFile(p, (char*)va, index*PGSIZE, PGSIZE) == -1){
       panic("fail to write to the file");
-    }
-    p->pages[index] = pageaddress;
-
-
   }
+  p->pages[index].pte = pageaddress;
+  p->pages[index].offset = index;
+  p->pages[index].va = va;
+
 }
