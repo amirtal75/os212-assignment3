@@ -87,12 +87,15 @@ struct metadata{
   uint64 pte;
   uint64 va;
   int offset;
+  uint age_counter;
+
 };
 
 // Per-process state
 struct proc {
-  struct spinlock lock;
 
+  struct spinlock lock;
+  
   // p->lock must be held when using these:
   enum procstate state;        // Process state
   void *chan;                  // If non-zero, sleeping on chan
@@ -113,15 +116,19 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-  // Pages suuport
+    // Pages suuport
   struct file *swapFile;
   int numOfPages;
+  int pagesOnRAM;
   struct metadata pages[MAX_PAGES];        //array of addresses
+  
 };
 
 
 // Help function declarations
-void init_metadat();
+void init_metadata();
 void restart_page(struct metadata m);
 void copy_metadata(struct proc *p,struct proc *np);
 void copy_file(struct proc *p,struct proc *np);
+void update_pages();
+void add_page(uint64 pageaddress, uint64 va);

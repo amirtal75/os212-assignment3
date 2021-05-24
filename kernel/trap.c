@@ -65,6 +65,26 @@ usertrap(void)
     intr_on();
 
     syscall();
+  // Pages support
+  } else if(r_scause() == 13 ||r_scause() == 15){
+    uint64 pageaddress = r_stval();
+    for (int i =0;i< MAX_PAGES; i++)
+    {
+      if (pageaddress == p->pages[i].pte)
+      {
+        if (p->pagesOnRAM < 16)
+        {
+          uint64 pte = (uint64)walk(p->pagetable,p->pages[i].va,1);
+          swapin(pte);
+          break;
+        }
+      } else{
+        // $to be implemented
+        #if defined(NFUA)
+          
+        #endif
+      }
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -163,6 +183,9 @@ void
 clockintr()
 {
   acquire(&tickslock);
+
+  // Pages support
+  update_pages();
   ticks++;
   wakeup(&ticks);
   release(&tickslock);

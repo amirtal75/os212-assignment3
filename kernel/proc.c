@@ -142,11 +142,13 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
   // Pages support
-  init_metadat();
+  
   p->swapFile = 0;
   p->numOfPages = 0;
+  p->pagesOnRAM = 0;
 
   if(p->pid > 2){
+    init_metadata();
     release(&p->lock);
     createSwapFile(p);
     acquire(&p->lock);
@@ -156,15 +158,15 @@ found:
 }
 
 // Pages support
-void init_metadat(){
-  struct proc* p = myproc();
+void init_metadata(){
+  struct proc *p = myproc();
   for (int i = 0; i < MAX_PAGES; i++)
   {
-        printf("offset before: %s\n",p->pages[i].offset );
-
     restart_page(p->pages[i]);
-        printf("offset after: %s\n",p->pages[i].offset );
-
+    // p->pages[i].offset = -1;
+    // p->pages[i].pte = 0;
+    // p->pages[i].va = 0;
+    // p->pages[i].age_counter = 0;
   } 
 }
 
@@ -172,6 +174,7 @@ void restart_page(struct metadata m){
   m.offset = -1;
   m.pte = 0;
   m.va = 0;
+  m.age_counter = 0;
 }
 
 // free a proc structure and the data hanging from it,
@@ -339,12 +342,9 @@ fork(void)
 
   // Pages Support
   np->numOfPages = p->numOfPages;
+  np->pagesOnRAM = p->pagesOnRAM;
   copy_metadata(p,np);
   copy_file(p,np);
-
-  uint64 tmp_page = (uint64)kalloc();
-  memmove((void*)tmp_page,(void*)p->pagetable,PGSIZE);
-  swapout(tmp_page);
 
   release(&np->lock);
 
@@ -709,7 +709,7 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s", p->pid, state, p->name);
+    printf("%d %s %s %d", p->pid, state, p->name,p->pages[0]);
     printf("\n");
   }
 }
@@ -754,21 +754,31 @@ swapin(uint64 pageaddress)
 {
   struct proc *p = myproc();
   int index = find_existing_page(pageaddress);
-  
+    int unlocked = 0;
+
   // convert PTE to physical address
   uint64 pa = PTE2PA(p->pages[index].pte);
   // extract offset and re-init to -1
   int offset = index*PGSIZE;
   p->pages[index].offset = -1;
 
+  if (p->lock.locked)
+  {
+    unlocked = 1;
+    release(&p->lock);
+  }
   uint64 va = PA2PTE(pa);
   if(readFromSwapFile(p, (char*)va, offset, PGSIZE) == -1){
     panic("fail to read from the file");
   }
-
+  if (unlocked)
+  {
+    acquire(&p->lock);
+  }
   pageaddress |= PTE_V;
   pageaddress &= ~PTE_PG;
 
+  p->pagesOnRAM++;
 }
 
 /*
@@ -779,16 +789,55 @@ swapout(uint64 pageaddress)
 {
   struct proc *p = myproc();
   int index = find_free_page();
-
+  int unlocked = 0;
   // convert PTE to physical address
   uint64 pa = PTE2PA(pageaddress);
   uint64 va = PA2PTE(pa);
 
+  if (p->lock.locked)
+  {
+    unlocked = 1;
+    release(&p->lock);
+  }
+  
   if(writeToSwapFile(p, (char*)va, index*PGSIZE, PGSIZE) == -1){
       panic("fail to write to the file");
   }
+  if (unlocked)
+  {
+    acquire(&p->lock);
+  }
+  
+  pageaddress &= ~PTE_V;
+  pageaddress |= PTE_PG;
+
   p->pages[index].pte = pageaddress;
   p->pages[index].offset = index;
   p->pages[index].va = va;
 
+  p->pagesOnRAM--;
+}
+
+void update_pages(){
+  struct proc *p = myproc();
+  for (int i = 0; i < MAX_PAGES; i++)
+  {
+    int c = p->pages[i].age_counter >> 1;
+    c &= ~(1L << 32);
+    if((p->pages[i].pte & PTE_A) == 1)
+    {
+      c |= (1L << 32);
+    }
+  }  
+}
+
+void add_page(uint64 pageaddress, uint64 va){
+  struct proc *p = myproc();
+  p->numOfPages++;
+  p->pagesOnRAM++;
+
+  #ifdef NONE
+    int index = find_free_page();
+    
+  #endif
 }
