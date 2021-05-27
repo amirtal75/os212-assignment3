@@ -70,11 +70,11 @@ usertrap(void)
     uint64 pageaddress = r_stval();
     for (int i =0;i< MAX_PAGES; i++)
     {
-      if (pageaddress == p->pages[i].pte)
+      if (pageaddress == p->disk_pages[i].pte)
       {
         if (p->pagesOnRAM < 16)
         {
-          uint64 pte = (uint64)walk(p->pagetable,p->pages[i].va,1);
+          uint64 pte = (uint64)walk(p->pagetable,p->disk_pages[i].va,1);
           swapin(pte);
           break;
         }

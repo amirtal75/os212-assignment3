@@ -120,7 +120,8 @@ struct proc {
   struct file *swapFile;
   int numOfPages;
   int pagesOnRAM;
-  struct metadata pages[MAX_PAGES];        //array of addresses
+  struct metadata ram_pages[MAX_PHYS_PAGES];        //array of addresses
+  struct metadata disk_pages[MAX_PHYS_PAGES];        //array of addresses
   
 };
 

@@ -162,12 +162,16 @@ void init_metadata(){
   struct proc *p = myproc();
   for (int i = 0; i < MAX_PAGES; i++)
   {
-    restart_page(p->pages[i]);
+    restart_page(p->ram_pages[i]);
+    restart_page(p->disk_pages[i]);
     // p->pages[i].offset = -1;
     // p->pages[i].pte = 0;
     // p->pages[i].va = 0;
     // p->pages[i].age_counter = 0;
-  } 
+  }
+  char buffer[MAX_PHYS_PAGES*PGSIZE];
+  memmove(buffer,48,MAX_PHYS_PAGES*PGSIZE);
+  writeToSwapFile(p,buffer,0,MAX_PHYS_PAGES*PGSIZE); 
 }
 
 void restart_page(struct metadata m){
@@ -362,14 +366,20 @@ fork(void)
 void copy_metadata(struct proc *p,struct proc *np){
   for (int i = 0; i < MAX_PAGES; i++)
   {
-    np->pages[i].va = p->pages[i].va;    
-    np->pages[i].offset = p->pages[i].offset;
-    np->pages[i].pte = p->pages[i].pte;
+    np->disk_pages[i].va = p->disk_pages[i].va;    
+    np->disk_pages[i].offset = p->disk_pages[i].offset;
+    np->disk_pages[i].pte = p->disk_pages[i].pte;
+
+    np->ram_pages[i].va = p->ram_pages[i].va;    
+    np->ram_pages[i].offset = p->ram_pages[i].offset;
+    np->ram_pages[i].pte = p->ram_pages[i].pte;
   }
 }
 
 void copy_file(struct proc *p,struct proc *np){
-  memmove(np->swapFile,p->swapFile,p->numOfPages);
+  char buffer[MAX_PHYS_PAGES*PGSIZE];
+  readFromSwapFile(p->swapFile, buffer, 0, MAX_PHYS_PAGES*PGSIZE);
+  writeToSwapFile(np->swapFile, buffer, 0, MAX_PHYS_PAGES*PGSIZE);
 }
 
 // Pass p's abandoned children to init.
@@ -709,7 +719,7 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s %d", p->pid, state, p->name,p->pages[0]);
+    printf("%d %s %s %d", p->pid, state, p->name,p->disk_pages[0]);
     printf("\n");
   }
 }
@@ -717,30 +727,53 @@ procdump(void)
 /*
   Search for a given page
 */
-int find_existing_page(uint64 pageaddress){
+int find_existing_page(int isRam,uint64 pageaddress){
   struct proc *p = myproc();
   
   for(int i = 0; i < MAX_PAGES; i++){
-    if (p->pages[i].pte == pageaddress && 
-        p->pages[i].offset != -1)
+    if (isRam)
     {
-      return i;
-    }    
+      if (p->ram_pages[i].pte == pageaddress && 
+        p->ram_pages[i].offset != -1)
+      {
+        return i;
+      } 
+    }
+    else
+    {
+      if (p->disk_pages[i].pte == pageaddress && 
+        p->disk_pages[i].offset != -1)
+      {
+        return i;
+      }  
+    }   
   }
-  panic("Failed to find the page/PTE in the pages array");
+  return -1;
+  //  panic("Failed to find the page/PTE in the pages array");
 }
 
 /*
   finds empty page
 */
-int find_free_page(void){
+int find_free_page(int isRam){
   struct proc *p = myproc();
   
   for(int i = 0; i < MAX_PAGES; i++){
-    if ( p->pages[i].offset == -1)
+    if (isRam)
     {
-      restart_page(p->pages[i]); //cleaning the page
-      return i;
+      if ( p->ram_pages[i].offset == -1)
+      {
+        restart_page(p->ram_pages[i]); //cleaning the page
+        return i;
+      }  
+    }  
+    else 
+    {
+      if ( p->disk_pages[i].offset == -1)
+      {
+        restart_page(p->disk_pages[i]); //cleaning the page
+        return i;
+      } 
     }    
   }
   panic("Failed to find the free page");
@@ -753,14 +786,19 @@ void
 swapin(uint64 pageaddress)
 {
   struct proc *p = myproc();
-  int index = find_existing_page(pageaddress);
-    int unlocked = 0;
+  int index = find_existing_page(0,pageaddress);
+  if (index == -1)
+  {
+    panic("Failed to find the page/PTE in the disk_pages array");
+  }
+  
+  int unlocked = 0;
 
   // convert PTE to physical address
-  uint64 pa = PTE2PA(p->pages[index].pte);
+  uint64 pa = PTE2PA(p->disk_pages[index].pte);
   // extract offset and re-init to -1
   int offset = index*PGSIZE;
-  p->pages[index].offset = -1;
+  p->disk_pages[index].offset = -1;
 
   if (p->lock.locked)
   {
@@ -788,7 +826,7 @@ void
 swapout(uint64 pageaddress)
 {
   struct proc *p = myproc();
-  int index = find_free_page();
+  int index = find_free_page(0);
   int unlocked = 0;
   // convert PTE to physical address
   uint64 pa = PTE2PA(pageaddress);
@@ -811,9 +849,11 @@ swapout(uint64 pageaddress)
   pageaddress &= ~PTE_V;
   pageaddress |= PTE_PG;
 
-  p->pages[index].pte = pageaddress;
-  p->pages[index].offset = index;
-  p->pages[index].va = va;
+  p->disk_pages[index].pte = pageaddress;
+  p->disk_pages[index].offset = index;
+  p->disk_pages[index].va = va;
+
+
 
   p->pagesOnRAM--;
 }
@@ -822,9 +862,9 @@ void update_pages(){
   struct proc *p = myproc();
   for (int i = 0; i < MAX_PAGES; i++)
   {
-    int c = p->pages[i].age_counter >> 1;
+    int c = p->disk_pages[i].age_counter >> 1;
     c &= ~(1L << 32);
-    if((p->pages[i].pte & PTE_A) == 1)
+    if((p->disk_pages[i].pte & PTE_A) == 1)
     {
       c |= (1L << 32);
     }
@@ -835,9 +875,60 @@ void add_page(uint64 pageaddress, uint64 va){
   struct proc *p = myproc();
   p->numOfPages++;
   p->pagesOnRAM++;
+  
+  int index = find_free_page(1);
 
   #ifdef NONE
-    int index = find_free_page();
     
+    p->ram_pages[index].pte = pageaddress;
+    p->ram_pages[index].va = va;
+  #endif
+
+  #ifdef NFUA
+    p->ram_pages[index].age_counter = 0;
   #endif
 }
+
+void remove_page(uint64 pageaddress){
+  struct proc *p = myproc();
+    
+  int ram_index = -1;
+  int disk_index = find_existing_page(0,pageaddress);
+  if (disk_index != -1)
+  {
+    ram_index = find_existing_page(1,pageaddress);
+  }
+
+  if (ram_index != -1)
+  {
+    p->pagesOnRAM--;
+  }
+  
+  if (ram_index == -1 && disk_index == -1)
+  {
+    panic("Failed to find the page/PTE in the pages array");
+  }
+
+  if (ram_index > -1 && disk_index > -1)
+  {
+    panic("Found page/PTE in both pages array");
+  }
+
+  p->numOfPages--;
+
+  #if defined(NFUA) || defined(NONE)
+    
+    if (ram_index != -1)
+    {
+      restart_page(p->ram_pages[ram_index]);
+    }
+    else
+    {
+      restart_page(p->disk_pages[disk_index]);
+    } 
+  #endif
+
+  return 1; 
+}
+
+
