@@ -66,26 +66,32 @@ usertrap(void)
 
     syscall();
   // Pages support
-  } else if(r_scause() == 13 ||r_scause() == 15){
+  }
+  else if(r_scause() == 13 ||r_scause() == 15){
+    #ifdef NONE
+      printf("segmentation fault\n");
+      p->killed = 1;
+      return;
+    #endif 
+    #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
     uint64 pageaddress = r_stval();
     for (int i =0;i< MAX_PAGES; i++)
     {
       if (pageaddress == p->disk_pages[i].pte)
       {
-        if (p->pagesOnRAM < 16)
+        if (p->pagesOnRAM == MAX_PHYS_PAGES)
         {
-          uint64 pte = (uint64)walk(p->pagetable,p->disk_pages[i].va,1);
-          swapin(pte);
-          break;
+          free_page(p);
         }
-      } else{
-        // $to be implemented
-        #if defined(NFUA)
-          
-        #endif
+        
+        uint64 pte = (uint64)walk(p->pagetable,p->disk_pages[i].va,1);
+        swapin(pte);
+        break;
       }
     }
-  } else if((which_dev = devintr()) != 0){
+    #endif
+  }
+   else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);

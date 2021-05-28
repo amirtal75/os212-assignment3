@@ -141,6 +141,7 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
   // Pages support
   
   p->swapFile = 0;
@@ -153,10 +154,12 @@ found:
     createSwapFile(p);
     acquire(&p->lock);
   }
+  #endif
+  
 
   return p;
 }
-
+#if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
 // Pages support
 void init_metadata(){
   struct proc *p = myproc();
@@ -174,13 +177,14 @@ void init_metadata(){
   writeToSwapFile(p,buffer,0,MAX_PHYS_PAGES*PGSIZE); 
 }
 
+
 void restart_page(struct metadata m){
   m.offset = -1;
   m.pte = 0;
   m.va = 0;
   m.age_counter = 0;
 }
-
+#endif
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
@@ -192,8 +196,11 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  
+  #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
   p->swapFile = 0;
   p->numOfPages = 0;
+  #endif
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -343,13 +350,13 @@ fork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
-
+#if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
   // Pages Support
   np->numOfPages = p->numOfPages;
   np->pagesOnRAM = p->pagesOnRAM;
   copy_metadata(p,np);
   copy_file(p,np);
-
+  #endif
   release(&np->lock);
 
   acquire(&wait_lock);
@@ -362,7 +369,7 @@ fork(void)
 
   return pid;
 }
-
+#if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
 void copy_metadata(struct proc *p,struct proc *np){
   for (int i = 0; i < MAX_PAGES; i++)
   {
@@ -381,7 +388,7 @@ void copy_file(struct proc *p,struct proc *np){
   readFromSwapFile(p->swapFile, buffer, 0, MAX_PHYS_PAGES*PGSIZE);
   writeToSwapFile(np->swapFile, buffer, 0, MAX_PHYS_PAGES*PGSIZE);
 }
-
+#endif
 // Pass p's abandoned children to init.
 // Caller must hold wait_lock.
 void
@@ -407,11 +414,12 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
-
+  #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
   //Pages support
   if(p->pid >2){
     removeSwapFile(p);
   }
+  #endif
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd]){
@@ -520,7 +528,9 @@ scheduler(void)
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
+        #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
         sfence_vma();
+        #endif
         c->proc = p;
         swtch(&c->context, &p->context);
 
@@ -564,6 +574,9 @@ sched(void)
 void
 yield(void)
 {
+  #ifdef NFUA
+    update_pages();
+  #endif
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
@@ -719,11 +732,12 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s %d", p->pid, state, p->name,p->disk_pages[0]);
+    printf("%d %s %s %d", p->pid, state, p->name);
     printf("\n");
   }
 }
 
+#if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
 /*
   Search for a given page
 */
@@ -813,10 +827,18 @@ swapin(uint64 pageaddress)
   {
     acquire(&p->lock);
   }
+  mappages(p->pagetable, va, PGSIZE, pa, PTE_W|PTE_R|PTE_X|PTE_U);
   pageaddress |= PTE_V;
   pageaddress &= ~PTE_PG;
 
+  #ifdef NFUA
+    p->pagesOnRAM[index].counter = 1<<31;
+  #endif
+
   p->pagesOnRAM++;
+
+  
+
 }
 
 /*
@@ -845,7 +867,7 @@ swapout(uint64 pageaddress)
   {
     acquire(&p->lock);
   }
-  
+  // $ maybe free memory
   pageaddress &= ~PTE_V;
   pageaddress |= PTE_PG;
 
@@ -862,12 +884,14 @@ void update_pages(){
   struct proc *p = myproc();
   for (int i = 0; i < MAX_PAGES; i++)
   {
+    #ifdef NFUA
     int c = p->disk_pages[i].age_counter >> 1;
     c &= ~(1L << 32);
     if((p->disk_pages[i].pte & PTE_A) == 1)
     {
       c |= (1L << 32);
     }
+    #endif
   }  
 }
 
@@ -877,12 +901,8 @@ void add_page(uint64 pageaddress, uint64 va){
   p->pagesOnRAM++;
   
   int index = find_free_page(1);
-
-  #ifdef NONE
-    
-    p->ram_pages[index].pte = pageaddress;
-    p->ram_pages[index].va = va;
-  #endif
+  p->ram_pages[index].pte = pageaddress;
+  p->ram_pages[index].va = va;
 
   #ifdef NFUA
     p->ram_pages[index].age_counter = 0;
@@ -916,7 +936,7 @@ void remove_page(uint64 pageaddress){
 
   p->numOfPages--;
 
-  #if defined(NFUA) || defined(NONE)
+  #ifdef NFUA
     
     if (ram_index != -1)
     {
@@ -931,4 +951,38 @@ void remove_page(uint64 pageaddress){
   return 1; 
 }
 
+// which page to be swapped out according to the chosen algorithm
 
+int index_to_be_swaped()
+{
+  int out = -1;
+  
+  struct proc* p = myproc();
+
+  #ifdef NFUA
+    uint ret, current =-1;
+    for(int i= 0; i < MAX_PHYS_PAGES; i++){
+      current = p->ram_pages[i].age_counter;
+      if (current < ret)
+      {
+        ret = i;
+      }
+
+    }
+    out = ret;
+  #endif
+
+  return out;
+}
+
+void free_page(struct proc* p)
+{
+  int lowest_age = index_to_be_swaped();
+  if (lowest_age == -1)
+  {
+    panic("no pages on ram to move to file");
+  }
+  uvmunmap(p->pagetable, p->ram_pages[lowest_age].va, 1, 1);
+}
+
+#endif
