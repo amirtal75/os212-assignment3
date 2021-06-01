@@ -148,7 +148,16 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
       return -1;
     if(*pte & PTE_V)
       panic("remap");
-    *pte = PA2PTE(pa) | perm | PTE_V;
+
+    *pte = PA2PTE(pa) | perm ;
+    #ifndef NONE
+      if(!(PTE_FLAGS(*pte) & PTE_PG)){
+        *pte |= PTE_V;
+      }
+    #endif
+    #ifdef NONE
+      *pte |= PTE_V;;
+    #endif
     if(a == last)
       break;
     a += PGSIZE;
@@ -173,12 +182,28 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
     if((*pte & PTE_V) == 0)
+    {
+      #ifndef NONE
+      if((*pte & PTE_PG) == 0)
+        panic("uvmunmap: not on disk and not on ram");
+      #endif 
       panic("uvmunmap: not mapped");
+    }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
-      uint64 pa = PTE2PA(*pte);
+      #ifndef NONE
+      if (((*pte & PTE_PG) == 0)))
+      {
+        uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
+      }
+      #else
+      {
+        uint64 pa = PTE2PA(*pte);
+        kfree((void*)pa);
+      }
+      #endif 
     }
     *pte = 0;
   }
@@ -227,9 +252,14 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
     #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
+      if (p->numOfPages == 32)
+      {
+        panic("uvmalloc: reached max of 32 pages per process");
+      }
+      
       if (p->pagesOnRAM >= MAX_PHYS_PAGES)
       {
-        free_page(p);
+        free_page(p); 
       }  
     #endif
     mem = kalloc();
@@ -244,6 +274,9 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       return 0;
     }
   }
+  #ifndef NONE
+    add_page(a);
+  #endif
   return newsz;
 }
 
@@ -261,7 +294,11 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
   }
-
+  #ifndef NONEW
+  for (int i = PGROUNDDOWN(oldsz); i > PGROUNDDOWN(newsz); i -= PGSIZE) {
+      remove_page(i);
+  }
+  #endif
   return newsz;
 }
 
@@ -313,12 +350,32 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
+    {
+      #ifndef NONE
+      if((*pte & PTE_PG) == 0)
+        panic("uvmcopy: not on disk and not on ram");
+      #endif 
       panic("uvmcopy: page not present");
+    }
+      
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+
+    #ifndef NONE
+    // Pages support
+    if ((flags & PTE_PG) != 1) {
+      if((mem = kalloc()) == 0)
+        goto err;
+      memmove(mem, (char*)pa, PGSIZE);
+    }
+    #else
+    {
+      if((mem = kalloc()) == 0)
       goto err;
-    memmove(mem, (char*)pa, PGSIZE);
+      memmove(mem, (char*)pa, PGSIZE);
+    }
+    #endif
+    
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
       goto err;

@@ -83,13 +83,13 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-#if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
+#ifndef NONE
 // Pages suuport
 struct metadata{
-uint64 pte;
 uint64 va;
 int offset;
 uint age_counter;
+int scfifo_accessed;
 };
 #endif
 
@@ -119,27 +119,30 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-  #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
-  // Pages suuport
+#ifndef NONE  // Pages suuport
   struct file *swapFile;
   int numOfPages;
   int pagesOnRAM;
-  struct metadata ram_pages[MAX_PHYS_PAGES];        //array of addresses
-  struct metadata disk_pages[MAX_PHYS_PAGES];        //array of addresses
+  struct metadata ram_pages[MAX_PAGES];        //array of addresses
+  struct metadata disk_pages[MAX_PAGES];        //array of addresses
+  int indexSCFIFO; //index of the current page to be swapped out
   #endif
 };
 
-#if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
+#ifndef NONE
 // Pages suuport
 // Help function declarations
-void init_metadata();
+int init_metadata();
 void restart_page(struct metadata m);
 void copy_metadata(struct proc *p,struct proc *np);
 void copy_file(struct proc *p,struct proc *np);
 void update_pages();
-void add_page(uint64 pageaddress, uint64 va);
+void add_page(uint64 va);
+void remove_page(uint64 va);
 int index_to_be_swaped();
 void free_page(struct proc* p);
+int find_existing_page(int isRam,uint64 va);
+int find_free_page(int isRam);
 #endif
 
 

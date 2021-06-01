@@ -67,30 +67,42 @@ usertrap(void)
     syscall();
   // Pages support
   }
-  else if(r_scause() == 13 ||r_scause() == 15){
-    #ifdef NONE
-      printf("segmentation fault\n");
-      p->killed = 1;
-      return;
-    #endif 
-    #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
-    uint64 pageaddress = r_stval();
-    for (int i =0;i< MAX_PAGES; i++)
-    {
-      if (pageaddress == p->disk_pages[i].pte)
+    if(r_scause() == 12 || r_scause() == 13 ||r_scause() == 15){
+      #ifdef NONE
+        printf("segmentation fault\n");
+        p->killed = 1;
+        return;
+      #endif 
+      #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
+      uint64 va = PGROUNDDOWN(r_stval());
+      uint64 pte = -1;
+      if((pte = (uint64)walk(p->pagetable, va, 0)) < 0)
       {
-        if (p->pagesOnRAM == MAX_PHYS_PAGES)
+        panic("usertrap page_fault - walk failed");
+      }
+      if(pte & PTE_V){
+        panic("usertrap page_fault - while page on ram");
+      }
+      
+      if(!(pte & PTE_PG)) {
+        panic("usertrap page_fault - while page is not on disk");
+      }
+      // pte is the va received from walk
+      if (p->pagesOnRAM == MAX_PHYS_PAGES)
+      {
+        if ((p->numOfPages - p->pagesOnRAM) != 16)
         {
           free_page(p);
         }
+        else swapin(pte);
         
-        uint64 pte = (uint64)walk(p->pagetable,p->disk_pages[i].va,1);
-        swapin(pte);
-        break;
       }
+      
+      if(pte & PTE_PG){
+        swapin(pte);
+      }
+      #endif
     }
-    #endif
-  }
    else if((which_dev = devintr()) != 0){
     // ok
   } else {

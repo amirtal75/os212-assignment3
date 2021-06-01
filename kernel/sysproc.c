@@ -95,3 +95,15 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+uint64
+sys_procdump(void)
+{
+  int pid;
+  int pid2;
+  if(argint(0, &pid) < 0)
+    return -1;
+  if(argint(1, &pid2) < 0)
+  return -1;
+  procdump(pid,pid2);
+  return 1;
+}

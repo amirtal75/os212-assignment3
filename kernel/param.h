@@ -13,4 +13,4 @@
 #define MAXPATH      128   // maximum file path name
 #define MAX_PHYS_PAGES 16
 #define MAX_TOTAL_PAGES 32
-#define MAX_PAGES MAX_TOTAL_PAGES-MAX_PHYS_PAGES+1
+#define MAX_PAGES 16

@@ -109,9 +109,9 @@ void            wakeup(void*);
 void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
-void            procdump(void);
-void            swapin(uint64 pageadress);
-void            swapout(uint64 pageadress);
+void            procdump(int pid, int pid2);
+void            swapin(uint64 va);
+void            swapout(uint64 va);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
