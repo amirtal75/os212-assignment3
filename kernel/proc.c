@@ -122,7 +122,9 @@ found:
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+    #ifndef NONE
     free_data(p);
+    #endif
     freeproc(p);
     release(&p->lock);
     return 0;
@@ -131,7 +133,9 @@ found:
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
+    #ifndef NONE
     free_data(p);
+    #endif
     freeproc(p);
     release(&p->lock);
     return 0;
@@ -174,12 +178,14 @@ freeproc(struct proc *p)
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   
-  #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
-  p->swapFile = 0;
+  
+  #ifndef NONE
   p->numOfPages = 0;
   p->indexSCFIFO = 0;
   p->pagesOnRAM = 0;
   #endif
+
+  p->swapFile = 0;
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -308,7 +314,9 @@ fork(void)
 
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
-    free_data(np);
+    #ifndef NONE
+    free_data(p);
+    #endif
     freeproc(np);
     release(&np->lock);
     return -1;
@@ -336,8 +344,14 @@ fork(void)
     np->numOfPages = p->numOfPages;
     np->pagesOnRAM = p->pagesOnRAM;
     np->indexSCFIFO = p->indexSCFIFO;
-    copy_metadata(p,np);
-    copy_file(p,np);
+    
+    if (p->pid > 2)
+    {
+      copy_metadata(p,np);
+      copy_file(p,np);
+    }
+    
+    
   }
   #endif
   release(&np->lock);
@@ -445,7 +459,10 @@ wait(uint64 addr)
             release(&wait_lock);
             return -1;
           }
+          #ifndef NONE
           free_data(np);
+          #endif
+
           freeproc(np);
           release(&np->lock);
           release(&wait_lock);
@@ -494,8 +511,8 @@ scheduler(void)
         #ifndef NONE
         if (p->pid > 2)
         {
-          // sfence_vma();
-          // update_pages();
+          sfence_vma();
+          update_pages();
         }
         
           
@@ -710,6 +727,7 @@ procdump(void)
 void
 procdump_test(int pid, int pid2)
 {
+  #ifndef NONE
   static char *states[] = {
   [UNUSED]    "unused",
   [SLEEPING]  "sleep ",
@@ -719,13 +737,16 @@ procdump_test(int pid, int pid2)
   };
   struct proc *p;
   char *state;
-
+/*
+  struct proc *parent = 0;
+  struct proc *child = 0;
   char* parent_buffer = kalloc();
-  char* child_buffer = kalloc();
+  char* child_buffer = kalloc();*/
   printf("\n");
   for(p = proc; p < &proc[NPROC]; p++){
     if (p->pid == pid)
     {
+      // parent = p;
       if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
         state = states[p->state];
       else
@@ -752,6 +773,7 @@ procdump_test(int pid, int pid2)
     }
     if (p->pid == pid2)
     {
+      // child = p;
       if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
         state = states[p->state];
       else
@@ -775,20 +797,20 @@ procdump_test(int pid, int pid2)
           i, p->disk_pages[i].va, p->disk_pages[i].offset, p->disk_pages[i].age_counter, 
           p->disk_pages[i].scfifo_accessed);
         }
-    }
+      }
+      
   }
-
+/*
   //compare swap files
   int swap_file_equality = 1;
   for (int i = 0; i < MAX_PAGES; i++)
   {
-    if(readFromSwapFile(p, parent_buffer, i*PGSIZE, PGSIZE) == -1){
+    if(readFromSwapFile(parent, parent_buffer, i*PGSIZE, PGSIZE) == -1){
       panic("fail to read from the file");
     }
-    if(readFromSwapFile(p, child_buffer, i*PGSIZE, PGSIZE) == -1){
+    if(readFromSwapFile(child, child_buffer, i*PGSIZE, PGSIZE) == -1){
       panic("fail to read from the file");
     }
-
     for (int j = 0; j < PGSIZE; j++)
     {
       if (child_buffer[j] != parent_buffer[j])
@@ -807,11 +829,14 @@ procdump_test(int pid, int pid2)
     printf("swap files are equal\n");
   }
   else printf("swap files are not equal!!!!!!!!!!!!!!!!\n");
+  */
+     #endif
+
 }
 
 #ifndef NONE
 void copy_metadata(struct proc *p,struct proc *np){
-  if(p->pid >2){
+  if(np->pid >2){
     for (int i = 0; i < MAX_PAGES; i++)
     {
       np->disk_pages[i].va = p->disk_pages[i].va;    
@@ -828,8 +853,20 @@ void copy_metadata(struct proc *p,struct proc *np){
 }
 
 void copy_file(struct proc *p,struct proc *np){
-  if(p->pid >2){
-    if (!p->swapFile || !np->swapFile)
+  if(np->pid >2){
+    int unlocked = 0;
+    int np_unlocked =0;
+    if (p->lock.locked)
+    {
+      unlocked = 1;
+      release(&p->lock);
+    }
+    if (np->lock.locked)
+    {
+      np_unlocked = 1;
+      release(&np->lock);
+    }
+    if ((!p->swapFile && (p->pid > 2)) || !np->swapFile)
     {
       panic("fork:copy_file: swap file does not exist");
     }
@@ -839,6 +876,14 @@ void copy_file(struct proc *p,struct proc *np){
     {
       readFromSwapFile(p, buffer, i*PGSIZE, PGSIZE);
       writeToSwapFile(np, buffer, i*PGSIZE, PGSIZE);
+    }
+    if (unlocked)
+    {
+      acquire(&p->lock);
+    }
+    if (np_unlocked)
+    {
+      acquire(&np->lock);
     }
     kfree(buffer);
   }
@@ -860,8 +905,8 @@ int init_metadata(struct proc *p){
   }
   for (int i = 0; i < MAX_PAGES; i++)
   {
-    restart_page(p->ram_pages[i]);
-    restart_page(p->disk_pages[i]);
+    restart_page(p,i,1);
+    restart_page(p,i,0);
   }
   char* buffer = (char*)kalloc();
   memset(buffer,48,PGSIZE);
@@ -885,20 +930,29 @@ int init_metadata(struct proc *p){
 }
 
 
-void restart_page(struct metadata m){
-  struct  proc *p = myproc();
-
+struct metadata restart_page(struct proc* p,int index, int isram){
+  
+  struct metadata *m=0;
   if(p->pid >2){
-    m.offset = -1;
-    m.va = 0;
-    m.scfifo_accessed  = 0;
+    
+  
+    if (isram)
+    {
+      m = &p->ram_pages[index];
+    }
+    else m = &p->disk_pages[index];
+    
+    m->offset = -1;
+    m->va = 0;
+    m->scfifo_accessed  = 0;
     #ifndef LAPA
-    m.age_counter = 0;
+    m->age_counter = 0;
     #else
-    m.age_counter = 0xffffffff;
+    m->age_counter = 0xffffffff;
     #endif
 
   }
+  return *m;
 }
 
 /*
@@ -944,7 +998,7 @@ int find_free_page(int isRam){
     {
       if ( p->ram_pages[i].offset == -1)
       {
-        restart_page(p->ram_pages[i]); //cleaning the page
+        restart_page(p,i,1); //cleaning the page
         return i;
       }  
     }  
@@ -952,7 +1006,7 @@ int find_free_page(int isRam){
     {
       if ( p->disk_pages[i].offset == -1)
       {
-        restart_page(p->disk_pages[i]); //cleaning the page
+        restart_page(p,i,0); //cleaning the page
         return i;
       } 
     }    
@@ -969,8 +1023,8 @@ void free_data(struct proc * p){
 
     for (int i = 0; i < MAX_PAGES; i++)
     {
-      restart_page(p->ram_pages[i]);
-      restart_page(p->disk_pages[i]);
+      restart_page(p,i,1);
+      restart_page(p,i,0);
     }  
   }
 }
@@ -996,7 +1050,7 @@ swapin(uint64 va)
 
     // extract offset and re-init to -1
     int offset = disk_index*PGSIZE;
-    restart_page(p->disk_pages[disk_index]);
+    restart_page(p,disk_index,0);
 
     if (p->lock.locked)
     {
@@ -1077,7 +1131,7 @@ swapout(uint64 va)
     p->disk_pages[disk_index].offset = disk_index;
     p->disk_pages[disk_index].va = va;
 
-    restart_page(p->ram_pages[ram_index]);
+    restart_page(p,ram_index,1);
 
     p->pagesOnRAM--;
     sfence_vma();
@@ -1095,7 +1149,7 @@ void update_pages()
       #ifndef SCFIFO
         uint c = p->ram_pages[i].age_counter >> 1;
         c &= ~(1L << 32);
-        if((p->ram_pages[i].va & PTE_A) == 1)
+        if((PTE_FLAGS(p->ram_pages[i].va) & PTE_A))
         {
           c |= (1L << 32);
         }
@@ -1117,25 +1171,22 @@ void add_page(uint64 va){
       struct proc *p = myproc();
 
   if(p->pid >2){ 
-    if (p->pid > 2)
-    {
-      p->numOfPages++;
-      p->pagesOnRAM++;
-      
-      int index = find_free_page(1);
-      p->ram_pages[index].va = va;
-      p->ram_pages[index].offset = index;
+    p->numOfPages++;
+    p->pagesOnRAM++;
+    
+    int index = find_free_page(1);
+    p->ram_pages[index].va = va;
+    p->ram_pages[index].offset = index;
 
-      #ifdef NFUA
-        p->ram_pages[index].age_counter = 0;
-      #endif
-      #ifdef LAPA
-        p->ram_pages[index].age_counter = 0xffffffff;
-      #endif
-      #ifdef SCFIFO
-         p->ram_pages[index].scfifo_accessed = 0;
-      #endif
-    }
+    #ifdef NFUA
+      p->ram_pages[index].age_counter = 0;
+    #endif
+    #ifdef LAPA
+      p->ram_pages[index].age_counter = 0xffffffff;
+    #endif
+    #ifdef SCFIFO
+        p->ram_pages[index].scfifo_accessed = 0;
+    #endif
   }
 }
 
@@ -1170,11 +1221,11 @@ void remove_page(uint64 va){
 
     if (ram_index != -1)
     {
-      restart_page(p->ram_pages[ram_index]);
+      restart_page(p,ram_index,1);
     }
     else
     {
-      restart_page(p->disk_pages[disk_index]);
+      restart_page(p,disk_index,0);
     } 
   }
 }
@@ -1203,7 +1254,7 @@ int index_to_be_swaped()
     {
       uint current = 0;
       uint min = 33;
-      for (int j = 0; i < 32; j++)
+      for (int j = 0; j < 32; j++)
       {
         if (p->ram_pages[i].age_counter & (1L << j))
         {

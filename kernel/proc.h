@@ -117,8 +117,9 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-#ifndef NONE  // Pages suuport
   struct file *swapFile;
+
+#ifndef NONE  // Pages suuport
   int numOfPages;
   int pagesOnRAM;
   struct metadata ram_pages[MAX_PAGES];        //array of addresses
@@ -131,7 +132,7 @@ struct proc {
 // Pages suuport
 // Help function declarations
 int init_metadata(struct proc *p);
-void restart_page(struct metadata m);
+struct metadata restart_page(struct proc *p, int index, int isram);
 void copy_metadata(struct proc *p,struct proc *np);
 void copy_file(struct proc *p,struct proc *np);
 void update_pages();

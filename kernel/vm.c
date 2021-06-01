@@ -197,7 +197,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       if ((*pte & PTE_PG) == 0)
       {
         uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+        kfree((void*)pa);
       }
       #else
       {
@@ -246,13 +246,14 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
   char *mem;
   uint64 a;
+  #ifndef NONE
   struct proc *p = myproc();
-  
+  #endif
   if(newsz < oldsz)
     return oldsz;
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
-    #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
+    #ifndef NONE
       if (p->numOfPages == 32)
       {
         panic("uvmalloc: reached max of 32 pages per process");
@@ -295,7 +296,7 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
   }
-  #ifndef NONEW
+  #ifndef NONE
   for (int i = PGROUNDDOWN(oldsz); i > PGROUNDDOWN(newsz); i -= PGSIZE) {
       remove_page(i);
   }

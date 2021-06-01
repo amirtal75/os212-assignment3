@@ -73,8 +73,9 @@ usertrap(void)
   else if(p->pid > 2 && (r_scause() == 12 || r_scause() == 13 ||r_scause() == 15)){
       #ifdef NONE
         printf("segmentation fault\n");
+        //uint64 va = PGROUNDDOWN(r_stval());
         p->killed = 1;
-        return;
+        usertrapret();
       #endif 
       #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
       uint64 va = PGROUNDDOWN(r_stval());
@@ -206,9 +207,6 @@ void
 clockintr()
 {
   acquire(&tickslock);
-
-  // Pages support
-  update_pages();
   ticks++;
   wakeup(&ticks);
   release(&tickslock);

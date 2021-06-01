@@ -28,11 +28,12 @@ test_fork()
     }   
 }
 
-void add_test();()
+void add_test()
 {
     int pid = getpid();
     procdump(pid,pid);
     char* buffer = malloc (4096*16);
+    *buffer=48;
     procdump(pid,pid);
 }
 
@@ -47,9 +48,10 @@ int
 main(int argc, char *argv[])
 {   
     init_test();
+    printf("done init\n");
 
     //test_fork();
 
     //add_test();
-    return 0;
+    exit(1);
 }
