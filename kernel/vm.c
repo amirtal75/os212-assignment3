@@ -150,15 +150,25 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("remap");
 
-    *pte = PA2PTE(pa) | perm ;
+    *pte = PA2PTE(pa) | perm | PTE_V;
+
+    /*
+    struct proc *p = myproc();
     #ifndef NONE
+    if (p->pid > 2)
+    {
+       add_page((uint64)*pte);
+    }
+    #endif
+    */
+    /*#ifndef NONE
       if(!(PTE_FLAGS(*pte) & PTE_PG)){
         *pte |= PTE_V;
       }
     #endif
     #ifdef NONE
       *pte |= PTE_V;;
-    #endif
+    #endif*/
     if(a == last)
       break;
     a += PGSIZE;
@@ -275,10 +285,15 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
+    #ifndef NONE
+      else if(p->pid >2)
+      {
+        uint64 va = (uint64)walk(pagetable, PGROUNDDOWN(a), 1);
+        add_page(va);
+      }
+    #endif
   }
-  #ifndef NONE
-    add_page(a);
-  #endif
+  
   return newsz;
 }
 

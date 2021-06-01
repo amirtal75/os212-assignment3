@@ -1099,12 +1099,12 @@ void
 swapout(uint64 va)
 {
       struct proc *p = myproc();
-
+  pte_t *vaa = (pte_t*)va;
   if(p->pid >2){
     int disk_index = find_free_page(0);
     int unlocked = 0;
 
-    if (!(va & PTE_V) || (va & PTE_PG)) {
+    if (!(*vaa & PTE_V) || (*vaa & PTE_PG)) {
       panic("swapout: page isn't on ram");
     }
 
@@ -1113,7 +1113,7 @@ swapout(uint64 va)
       unlocked = 1;
       release(&p->lock);
     }
-    uint64 pa = PTE2PA(va);
+    uint64 pa = PTE2PA(*vaa);
     if(writeToSwapFile(p, (char*)pa, disk_index*PGSIZE, PGSIZE) == -1){
         panic("swapout: fail to write to the file");
     }
@@ -1125,8 +1125,8 @@ swapout(uint64 va)
     }
 
     int ram_index = find_existing_page(1,va);
-    va &= ~PTE_V;
-    va |= PTE_PG;
+    *vaa &= ~PTE_V;
+    *vaa |= PTE_PG;
 
     p->disk_pages[disk_index].offset = disk_index;
     p->disk_pages[disk_index].va = va;
@@ -1296,7 +1296,6 @@ void free_page(struct proc* p)
       panic("no pages on ram to move to file");
     }
     swapout(p->ram_pages[lowest_age].va);
-    uvmunmap(p->pagetable, p->ram_pages[lowest_age].va, 1, 1);
   }
 }
 //$$$$ index scfifo when do we need to inc and dec && tests && gdb
