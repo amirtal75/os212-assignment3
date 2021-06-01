@@ -26,7 +26,8 @@ sys_getpid(void)
 uint64
 sys_fork(void)
 {
-  return fork();
+  int succ = fork();
+  return succ;
 }
 
 uint64
@@ -104,6 +105,6 @@ sys_procdump(void)
     return -1;
   if(argint(1, &pid2) < 0)
   return -1;
-  procdump(pid,pid2);
+  procdump_test(pid,pid2);
   return 1;
 }

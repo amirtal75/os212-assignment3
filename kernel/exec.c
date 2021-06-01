@@ -20,13 +20,6 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
-  
-  #ifndef NONE
-    struct metadata disk_backup[MAX_PAGES];
-    struct metadata ram_backup[MAX_PAGES];    
-    memmove(ram_backup, p->ram_pages, MAX_PAGES*PGSIZE);    
-    memmove(disk_backup, p->disk_pages, MAX_PAGES*PGSIZE);
-  #endif
 
   begin_op();
 
@@ -36,11 +29,6 @@ exec(char *path, char **argv)
   }
   ilock(ip);
 
-  #ifndef NONE
-    if(p->pid > 2 && (init_metadata() < 0)){
-        goto bad;
-    }
-  #endif
   // Check ELF header
   if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf))
     goto bad;
@@ -49,6 +37,14 @@ exec(char *path, char **argv)
 
   if((pagetable = proc_pagetable(p)) == 0)
     goto bad;
+
+  #ifndef NONE
+  if (p->pid >2 && (p->numOfPages-p->pagesOnRAM >0))
+  {
+    removeSwapFile(p);
+    init_metadata(p);
+  }
+  #endif
 
   // Load program into memory.
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
@@ -131,10 +127,6 @@ exec(char *path, char **argv)
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
- #ifndef NONE
-    memmove( p->ram_pages,ram_backup, MAX_PAGES*PGSIZE);    
-    memmove(p->disk_pages, disk_backup, MAX_PAGES*PGSIZE);
- #endif
   if(pagetable)
     proc_freepagetable(pagetable, sz);
   if(ip){

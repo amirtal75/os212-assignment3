@@ -53,8 +53,11 @@ usertrap(void)
   if(r_scause() == 8){
     // system call
 
-    if(p->killed)
+    if(p->killed){
+      
       exit(-1);
+    }
+      
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
@@ -67,7 +70,7 @@ usertrap(void)
     syscall();
   // Pages support
   }
-    if(r_scause() == 12 || r_scause() == 13 ||r_scause() == 15){
+  else if(p->pid > 2 && (r_scause() == 12 || r_scause() == 13 ||r_scause() == 15)){
       #ifdef NONE
         printf("segmentation fault\n");
         p->killed = 1;
@@ -75,16 +78,16 @@ usertrap(void)
       #endif 
       #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
       uint64 va = PGROUNDDOWN(r_stval());
-      uint64 pte = -1;
-      if((pte = (uint64)walk(p->pagetable, va, 0)) < 0)
+      pte_t* pte;
+      if((pte = walk(p->pagetable, va, 0)) < 0)
       {
         panic("usertrap page_fault - walk failed");
       }
-      if(pte & PTE_V){
+      if(*pte & PTE_V){
         panic("usertrap page_fault - while page on ram");
       }
       
-      if(!(pte & PTE_PG)) {
+      if(!(*pte & PTE_PG)) {
         panic("usertrap page_fault - while page is not on disk");
       }
       // pte is the va received from walk
@@ -94,12 +97,12 @@ usertrap(void)
         {
           free_page(p);
         }
-        else swapin(pte);
+        else swapin(*pte);
         
       }
       
-      if(pte & PTE_PG){
-        swapin(pte);
+      if(*pte & PTE_PG){
+        swapin(*pte);
       }
       #endif
     }
@@ -111,8 +114,10 @@ usertrap(void)
     p->killed = 1;
   }
 
-  if(p->killed)
+  if(p->killed){
     exit(-1);
+  }
+    
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)

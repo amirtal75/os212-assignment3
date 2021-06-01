@@ -38,7 +38,9 @@ void add_test();()
 
 void init_test()
 {
+    printf("before\n");
     int pid = getpid();
+    printf("parent pid: %d\n", pid);
     procdump(pid,pid);
 }
 int
@@ -46,8 +48,8 @@ main(int argc, char *argv[])
 {   
     init_test();
 
-    test_fork();
+    //test_fork();
 
-    add_test();
+    //add_test();
     return 0;
 }

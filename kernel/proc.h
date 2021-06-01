@@ -83,7 +83,6 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-#ifndef NONE
 // Pages suuport
 struct metadata{
 uint64 va;
@@ -91,7 +90,6 @@ int offset;
 uint age_counter;
 int scfifo_accessed;
 };
-#endif
 
 
 // Per-process state
@@ -132,7 +130,7 @@ struct proc {
 #ifndef NONE
 // Pages suuport
 // Help function declarations
-int init_metadata();
+int init_metadata(struct proc *p);
 void restart_page(struct metadata m);
 void copy_metadata(struct proc *p,struct proc *np);
 void copy_file(struct proc *p,struct proc *np);
@@ -141,8 +139,8 @@ void add_page(uint64 va);
 void remove_page(uint64 va);
 int index_to_be_swaped();
 void free_page(struct proc* p);
+void free_data(struct proc * p);
 int find_existing_page(int isRam,uint64 va);
 int find_free_page(int isRam);
 #endif
-
 

@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
 #include "proc.h"
 
 /*
@@ -193,7 +194,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       #ifndef NONE
-      if (((*pte & PTE_PG) == 0)))
+      if ((*pte & PTE_PG) == 0)
       {
         uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
@@ -344,7 +345,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  char *mem = 0;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -360,10 +361,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+    // int is_PG = (PTE_FLAGS(*pte) & PTE_PG);
 
     #ifndef NONE
     // Pages support
-    if ((flags & PTE_PG) != 1) {
+    if (!(*pte & PTE_PG)) {
       if((mem = kalloc()) == 0)
         goto err;
       memmove(mem, (char*)pa, PGSIZE);

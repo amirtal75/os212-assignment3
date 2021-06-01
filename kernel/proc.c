@@ -152,11 +152,9 @@ found:
   p->indexSCFIFO = 0;
 
   if(p->pid > 2){
-    if(init_metadata() < 0){
+    if(init_metadata(p) < 0){
       panic("failed to create page metadata");
     }
-    release(&p->lock);
-    acquire(&p->lock);
   }
   #endif
   
@@ -334,7 +332,7 @@ fork(void)
   pid = np->pid;
   #ifndef NONE
   // Pages Support
-  if(p->pid > 2){
+  if(np->pid > 2){
     np->numOfPages = p->numOfPages;
     np->pagesOnRAM = p->pagesOnRAM;
     np->indexSCFIFO = p->indexSCFIFO;
@@ -493,9 +491,14 @@ scheduler(void)
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
-        #if defined(NFUA) || defined(LAPA) || defined(SCFIFO)
-        sfence_vma();
-        update_pages();
+        #ifndef NONE
+        if (p->pid > 2)
+        {
+          // sfence_vma();
+          // update_pages();
+        }
+        
+          
         #endif
         c->proc = p;
         swtch(&c->context, &p->context);
@@ -674,38 +677,38 @@ either_copyin(void *dst, int user_src, uint64 src, uint64 len)
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
-// void
-// procdump(void)
-// {
-//   static char *states[] = {
-//   [UNUSED]    "unused",
-//   [SLEEPING]  "sleep ",
-//   [RUNNABLE]  "runble",
-//   [RUNNING]   "run   ",
-//   [ZOMBIE]    "zombie"
-//   };
-//   struct proc *p;
-//   char *state;
+void
+procdump(void)
+{
+  static char *states[] = {
+  [UNUSED]    "unused",
+  [SLEEPING]  "sleep ",
+  [RUNNABLE]  "runble",
+  [RUNNING]   "run   ",
+  [ZOMBIE]    "zombie"
+  };
+  struct proc *p;
+  char *state;
 
-//   printf("\n");
-//   for(p = proc; p < &proc[NPROC]; p++){
-//     if(p->state == UNUSED)
-//       continue;
-//     if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
-//       state = states[p->state];
-//     else
-//       state = "???";
-//     printf("%d %s %s %d", p->pid, state, p->name);
-//     printf("\n");
-//   }
-// }
+  printf("\n");
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->state == UNUSED)
+      continue;
+    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+      state = states[p->state];
+    else
+      state = "???";
+    printf("%d %s %s %d", p->pid, state, p->name);
+    printf("\n");
+  }
+}
 
 
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
 void
-procdump(int pid, int pid2)
+procdump_test(int pid, int pid2)
 {
   static char *states[] = {
   [UNUSED]    "unused",
@@ -732,18 +735,18 @@ procdump(int pid, int pid2)
         printf("numOfPages: %d, pagesOnRAM: %d, indexSCFIFO: %d\n", 
         p->numOfPages, p->pagesOnRAM, p->indexSCFIFO);
 
-        printf("metadata RAM\n", 
+        printf("metadata RAM\n");
         for (int i = 0; i < MAX_PAGES; i++)
         {
           printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
-          i, p->ram_pages[i].va, p->ram_pages[i].offest, p->ram_pages[i].age_counter, 
+          i, p->ram_pages[i].va, p->ram_pages[i].offset, p->ram_pages[i].age_counter, 
           p->ram_pages[i].scfifo_accessed);
         }
-        printf("metadata DISK\n", 
+        printf("metadata DISK\n");
         for (int i = 0; i < MAX_PAGES; i++)
         {
           printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
-          i, p->disk_pages[i].va, p->disk_pages[i].offest, p->disk_pages[i].age_counter, 
+          i, p->disk_pages[i].va, p->disk_pages[i].offset, p->disk_pages[i].age_counter, 
           p->disk_pages[i].scfifo_accessed);
         }
     }
@@ -758,18 +761,18 @@ procdump(int pid, int pid2)
         printf("numOfPages: %d, pagesOnRAM: %d, indexSCFIFO: %d\n", 
         p->numOfPages, p->pagesOnRAM, p->indexSCFIFO);
 
-        printf("metadata RAM\n", 
+        printf("metadata RAM\n");
         for (int i = 0; i < MAX_PAGES; i++)
         {
           printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
-          i, p->ram_pages[i].va, p->ram_pages[i].offest, p->ram_pages[i].age_counter, 
+          i, p->ram_pages[i].va, p->ram_pages[i].offset, p->ram_pages[i].age_counter, 
           p->ram_pages[i].scfifo_accessed);
         }
-        printf("metadata DISK\n", 
+        printf("metadata DISK\n"); 
         for (int i = 0; i < MAX_PAGES; i++)
         {
           printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
-          i, p->disk_pages[i].va, p->disk_pages[i].offest, p->disk_pages[i].age_counter, 
+          i, p->disk_pages[i].va, p->disk_pages[i].offset, p->disk_pages[i].age_counter, 
           p->disk_pages[i].scfifo_accessed);
         }
     }
@@ -834,27 +837,34 @@ void copy_file(struct proc *p,struct proc *np){
     void *buffer = kalloc();
     for (int i = 0; i < MAX_PAGES; i++)
     {
-      readFromSwapFile(p->swapFile, buffer, i*PGSIZE, PGSIZE);
-      writeToSwapFile(np->swapFile, buffer, i*PGSIZE, PGSIZE);
+      readFromSwapFile(p, buffer, i*PGSIZE, PGSIZE);
+      writeToSwapFile(np, buffer, i*PGSIZE, PGSIZE);
     }
     kfree(buffer);
   }
 }
 // Pages support
-int init_metadata(){
-  struct proc *p = myproc();
+int init_metadata(struct proc *p){
+
+  if (p->pid > 2)
+  {
+    int unlocked = 0;
+  if (p->lock.locked)
+  {
+    unlocked = 1;
+    release(&p->lock);
+  }
   if (createSwapFile(p) < 0)
   {
     return -1;
   }
-  
   for (int i = 0; i < MAX_PAGES; i++)
   {
     restart_page(p->ram_pages[i]);
     restart_page(p->disk_pages[i]);
   }
   char* buffer = (char*)kalloc();
-  memmove(buffer,48,PGSIZE);
+  memset(buffer,48,PGSIZE);
   for (int i = 0; i < MAX_PAGES; i++)
   {
     if (writeToSwapFile(p,buffer,i*PGSIZE,PGSIZE) < 0)
@@ -862,13 +872,22 @@ int init_metadata(){
       return -1;
     }
   }
+  if (unlocked)
+  {
+    acquire(&p->lock);
+  }
   kfree(buffer);
   
   return 1;
+  }
+
+  return 0;
 }
 
 
 void restart_page(struct metadata m){
+  struct  proc *p = myproc();
+
   if(p->pid >2){
     m.offset = -1;
     m.va = 0;
@@ -962,9 +981,10 @@ void free_data(struct proc * p){
 */
 void
 swapin(uint64 va)
-{
+{    
+  struct proc *p = myproc();
+
   if(p->pid >2){
-    struct proc *p = myproc();
     
     int disk_index = find_existing_page(0,va);
     if (disk_index == -1)
@@ -1024,8 +1044,9 @@ swapin(uint64 va)
 void 
 swapout(uint64 va)
 {
+      struct proc *p = myproc();
+
   if(p->pid >2){
-    struct proc *p = myproc();
     int disk_index = find_free_page(0);
     int unlocked = 0;
 
@@ -1063,34 +1084,39 @@ swapout(uint64 va)
   }
 }
 
-void update_pages(){
-  if(p->pid >2){
-    struct proc *p = myproc();
+void update_pages()
+{
+  struct proc *p = myproc();
+
+  if(p && p->pid >2){
+
     for (int i = 0; i < MAX_PAGES; i++)
     {
-    #ifndef SCFIFO
-      uint c = p->ram_pages[i].age_counter >> 1;
-      c &= ~(1L << 32);
-      if((p->ram_pages[i].va & PTE_A) == 1)
-      {
-        c |= (1L << 32);
-      }
-      p->ram_pages[i].age_counter = c;
-      p->ram_pages[i].va &= ~PTE_A;
-    }
-    #else
-      {
-        if(p->ram_pages[i].va &= PTE_A){
-          p->ram_pages[i].scfifo_accessed =1;
+      #ifndef SCFIFO
+        uint c = p->ram_pages[i].age_counter >> 1;
+        c &= ~(1L << 32);
+        if((p->ram_pages[i].va & PTE_A) == 1)
+        {
+          c |= (1L << 32);
         }
-      }  
-    #endif
+        p->ram_pages[i].age_counter = c;
+        p->ram_pages[i].va &= ~PTE_A;
+      
+      #else
+        {
+          if(p->ram_pages[i].va &= PTE_A){
+            p->ram_pages[i].scfifo_accessed =1;
+          }
+        }  
+      #endif
+    }
   }
 }
 
 void add_page(uint64 va){
+      struct proc *p = myproc();
+
   if(p->pid >2){ 
-    struct proc *p = myproc();
     if (p->pid > 2)
     {
       p->numOfPages++;
@@ -1107,15 +1133,16 @@ void add_page(uint64 va){
         p->ram_pages[index].age_counter = 0xffffffff;
       #endif
       #ifdef SCFIFO
-         p->ram_pages[i].scfifo_accessed = 0;
+         p->ram_pages[index].scfifo_accessed = 0;
       #endif
     }
   }
 }
 
 void remove_page(uint64 va){
+      struct proc *p = myproc();
+
   if(p->pid >2){
-    struct proc *p = myproc();
       
     int ram_index = -1;
     int disk_index = find_existing_page(0,va);
@@ -1217,8 +1244,8 @@ void free_page(struct proc* p)
     {
       panic("no pages on ram to move to file");
     }
-    swapout(p->ram_pages[lowest_age]);
-    vmunmap(p->pagetable, p->ram_pages[lowest_age].va, 1, 1);
+    swapout(p->ram_pages[lowest_age].va);
+    uvmunmap(p->pagetable, p->ram_pages[lowest_age].va, 1, 1);
   }
 }
 //$$$$ index scfifo when do we need to inc and dec && tests && gdb
