@@ -1072,9 +1072,6 @@ swapin(uint64 va)
     }
 
     int ram_index = find_free_page(1);
-    
-    va |= PTE_V;
-    va &= ~PTE_PG;
 
     mappages(p->pagetable, va, PGSIZE, (uint64)buffer, PTE_W|PTE_R|PTE_X|PTE_U);
     
@@ -1096,15 +1093,15 @@ swapin(uint64 va)
   a position oa a "leaf" page to insert
 */
 void 
-swapout(uint64 va)
+swapout(uint64 first_va)
 {
-      struct proc *p = myproc();
-  pte_t *vaa = (pte_t*)va;
+  struct proc *p = myproc();
+  pte_t *third_va = walk(p->pagetable, first_va, 0);
   if(p->pid >2){
     int disk_index = find_free_page(0);
     int unlocked = 0;
 
-    if (!(*vaa & PTE_V) || (*vaa & PTE_PG)) {
+    if (!((*third_va & PTE_V) || (*third_va & PTE_PG))) {
       panic("swapout: page isn't on ram");
     }
 
@@ -1113,23 +1110,23 @@ swapout(uint64 va)
       unlocked = 1;
       release(&p->lock);
     }
-    uint64 pa = PTE2PA(*vaa);
+    uint64 pa = PTE2PA(*third_va);
     if(writeToSwapFile(p, (char*)pa, disk_index*PGSIZE, PGSIZE) == -1){
         panic("swapout: fail to write to the file");
     }
-    uvmunmap(p->pagetable, va, 1, 1);
+    uvmunmap(p->pagetable, first_va, 1, 1);
 
     if (unlocked)
     {
       acquire(&p->lock);
     }
 
-    int ram_index = find_existing_page(1,va);
-    *vaa &= ~PTE_V;
-    *vaa |= PTE_PG;
+    int ram_index = find_existing_page(1,first_va);
+    *third_va &= ~PTE_V;
+    *third_va |= PTE_PG;
 
     p->disk_pages[disk_index].offset = disk_index;
-    p->disk_pages[disk_index].va = va;
+    p->disk_pages[disk_index].va = first_va;
 
     restart_page(p,ram_index,1);
 

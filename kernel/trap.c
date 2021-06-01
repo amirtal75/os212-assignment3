@@ -98,12 +98,12 @@ usertrap(void)
         {
           free_page(p);
         }
-        else swapin(*pte);
+        else swapin(va);
         
       }
       
       if(*pte & PTE_PG){
-        swapin(*pte);
+        swapin(va);
       }
       #endif
     }

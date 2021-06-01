@@ -152,23 +152,9 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 
     *pte = PA2PTE(pa) | perm | PTE_V;
 
-    /*
-    struct proc *p = myproc();
     #ifndef NONE
-    if (p->pid > 2)
-    {
-       add_page((uint64)*pte);
-    }
+     *pte &= ~PTE_PG;
     #endif
-    */
-    /*#ifndef NONE
-      if(!(PTE_FLAGS(*pte) & PTE_PG)){
-        *pte |= PTE_V;
-      }
-    #endif
-    #ifdef NONE
-      *pte |= PTE_V;;
-    #endif*/
     if(a == last)
       break;
     a += PGSIZE;
@@ -288,8 +274,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     #ifndef NONE
       else if(p->pid >2)
       {
-        uint64 va = (uint64)walk(pagetable, PGROUNDDOWN(a), 1);
-        add_page(va);
+        // uint64 va = (uint64)walk(pagetable, PGROUNDDOWN(a), 1);
+        add_page(PGROUNDDOWN(a));
       }
     #endif
   }
