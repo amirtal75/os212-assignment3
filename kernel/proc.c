@@ -512,7 +512,7 @@ scheduler(void)
         if (p->pid > 2)
         {
           sfence_vma();
-          update_pages();
+          update_pages(p);
         }
         
           
@@ -751,7 +751,7 @@ procdump_test(int pid, int pid2)
         state = states[p->state];
       else
         state = "???";
-      printf("%d %s %s %d", p->pid, state, p->name);
+      printf("pid: %d, state: %s, name: %s", p->pid, state, p->name);
       printf("\n");
         printf("numOfPages: %d, pagesOnRAM: %d, indexSCFIFO: %d\n", 
         p->numOfPages, p->pagesOnRAM, p->indexSCFIFO);
@@ -778,7 +778,7 @@ procdump_test(int pid, int pid2)
         state = states[p->state];
       else
         state = "???";
-      printf("%d %s %s %d", p->pid, state, p->name);
+      printf("pid: %d, state: %s, name: %s", p->pid, state, p->name);
       printf("\n");
         printf("numOfPages: %d, pagesOnRAM: %d, indexSCFIFO: %d\n", 
         p->numOfPages, p->pagesOnRAM, p->indexSCFIFO);
@@ -938,7 +938,7 @@ void restart_page(struct proc* p,int index, int isram){
     if (isram)
     {
       p->ram_pages[index].offset = -1;
-      p->ram_pages[index].va = 0;
+      p->ram_pages[index].va = -1;
       p->ram_pages[index].scfifo_accessed  = 0;
       #ifndef LAPA
       p->ram_pages[index].age_counter = 0;
@@ -948,7 +948,7 @@ void restart_page(struct proc* p,int index, int isram){
     }
     else{
       p->disk_pages[index].offset = -1;
-      p->disk_pages[index].va = 0;
+      p->disk_pages[index].va = -1;
       p->disk_pages[index].scfifo_accessed  = 0;
       #ifndef LAPA
       p->disk_pages[index].age_counter = 0;
@@ -1020,9 +1020,10 @@ int find_free_page(int isRam){
 
 void free_data(struct proc * p){
   if(p->pid >2){
-    if (removeSwapFile(p) < 0)
+    if (p->swapFile)
     {
-      panic("failed to delete file");
+      removeSwapFile(p);
+      p->swapFile = 0;
     }
 
     for (int i = 0; i < MAX_PAGES; i++)
@@ -1083,7 +1084,7 @@ swapin(uint64 va)
     p->ram_pages[ram_index].va = va;
 
     #ifdef NFUA
-      p->pagesOnRAM[index].counter = 1<<31;
+      p->ram_pages[ram_index].age_counter = 1<<31;
     #endif
 
     p->pagesOnRAM++;
@@ -1118,8 +1119,10 @@ swapout(uint64 first_va)
     if(writeToSwapFile(p, (char*)pa, disk_index*PGSIZE, PGSIZE) == -1){
         panic("swapout: fail to write to the file");
     }
-    uvmunmap(p->pagetable, first_va, 1, 1);
+    //uvmunmap(p->pagetable, first_va, 1, 1);
 
+    //kfree((void*)(pa));
+    //*third_va = 0;
     if (unlocked)
     {
       acquire(&p->lock);
@@ -1141,27 +1144,26 @@ swapout(uint64 first_va)
   }
 }
 
-void update_pages()
+void update_pages(struct proc *p)
 {
-  struct proc *p = myproc();
-
   if(p && p->pid >2){
 
     for (int i = 0; i < MAX_PAGES; i++)
     {
+      pte_t* pte = walk(p->pagetable, p->ram_pages[i].va,0);
       #ifndef SCFIFO
         uint c = p->ram_pages[i].age_counter >> 1;
         c &= ~(1L << 32);
-        if((PTE_FLAGS(p->ram_pages[i].va) & PTE_A))
+        if((PTE_FLAGS(*pte) & PTE_A))
         {
           c |= (1L << 32);
         }
         p->ram_pages[i].age_counter = c;
-        p->ram_pages[i].va &= ~PTE_A;
+        *pte &= ~PTE_A;
       
       #else
         {
-          if(p->ram_pages[i].va &= PTE_A){
+          if(*pte &= PTE_A){
             p->ram_pages[i].scfifo_accessed =1;
           }
         }  
@@ -1242,7 +1244,8 @@ int index_to_be_swaped()
   struct proc* p = myproc();
 
   #ifdef NFUA
-    uint min, current = 0xFFFFFFFF;
+    uint current = 0xFFFFFFFF;
+    uint min = 0xFFFFFFFF;
     for(int i= 0; i < MAX_PAGES; i++){
       current = p->ram_pages[i].age_counter;
       if (current < min)
@@ -1292,7 +1295,6 @@ int index_to_be_swaped()
 void free_page(struct proc* p)
 {
   if(p->pid >2){
-
     int lowest_age = index_to_be_swaped();
     if (lowest_age == -1)
     {
@@ -1302,4 +1304,28 @@ void free_page(struct proc* p)
   }
 }
 //$$$$ index scfifo when do we need to inc and dec && tests && gdb
+
+struct proc* proc_by_pagetable(pagetable_t pagetable){
+  struct proc *p = proc;
+  // struct proc *p2 = myproc();
+  // struct cpu* c;
+  intr_off();
+  for(p = proc; p < &proc[NPROC]; p++)
+  {
+
+    if (p->pagetable == pagetable)
+    {
+      intr_on();
+      return p;
+    }
+    else{
+      // printf("current proc id: %d, with pagetable: %x, is different then pagetable: %x\n", p->pid, p->pagetable, pagetable);
+      // printf("p2 id: %d with pt: %x", p2->pid,p2->pagetable);
+    }
+    
+  }
+  intr_on();
+  return 0;
+}
 #endif
+

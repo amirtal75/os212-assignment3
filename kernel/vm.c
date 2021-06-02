@@ -167,48 +167,53 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
   uint64 a;
   pte_t *pte;
+  // uint64 va_bu = va;
   struct proc* p =myproc();
   if((va % PGSIZE) != 0)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
       
-      if((pte = walk(pagetable, a, 0)) == 0)
-        panic("uvmunmap: walk");
-      if((*pte & PTE_V) == 0)
+    if((pte = walk(pagetable, a, 0)) == 0)
+      panic("uvmunmap: walk");
+    if((*pte & PTE_V) == 0)
+    {
+      #ifndef NONE
+      if ((*pte & PTE_PG) == 0)
+      {
         panic("uvmunmap: not mapped");
-      if(PTE_FLAGS(*pte) == PTE_V)
-        panic("uvmunmap: not a leaf");
-    int index = -2;
-    #ifndef NONE
-    if(p->pid >2){
-      index = find_existing_page(1, va);
-      if(index > -1){
-      if((*pte & PTE_PG))
-        panic("uvmunmap: page is on ran and PTE_PG is on");
-      restart_page(myproc(), index, 1);
-      }}
+      }
+      else
+      {
+        restart_page(p, find_existing_page(0, a), 0);
+        p->numOfPages--;
+      }
+      #else
+      {
+        panic("uvmunmap: not mapped");
+      }
       #endif
+      
+    }
+      
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("uvmunmap: not a leaf");
+    // int index = -2;
+    // #ifndef NONE
+    // if(p->pid >2){
+    //   index = find_existing_page(1, a);
+    //   if(index > -1){
+    //   if((*pte & PTE_PG))
+    //     panic("uvmunmap: page is on ram and PTE_PG is on");
+    //   // restart_page(myproc(), index, 1);
+    //   }
+    // }
+    //   #endif
       uint64 pa = PTE2PA(*pte);
       if(do_free){
         kfree((void*)pa);
       }
-      *pte = 0;
-    #ifndef NONE 
-    if(p->pid > 2){
-      if(index == -1) {
-        index = find_existing_page(0, va);
-        if(index == -1)
-          panic("uvmunmap: not on disk and not on ram");
-        if((*pte & PTE_V))
-          panic("uvmunmap: page is on disk and PTE_V is on");
-        else{
-          restart_page(myproc(), index, 0);
-        }
-      }
-    }
-    #endif
-    
+      *pte = 0;    
   }
 }
 
@@ -249,19 +254,24 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   char *mem;
   uint64 a;
   #ifndef NONE
-  struct proc *p = myproc();
+  struct proc *p = proc_by_pagetable(pagetable);
+  if (!p)
+  {
+    p = myproc();
+  }
+  
   #endif
   if(newsz < oldsz)
     return oldsz;
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
     #ifndef NONE
-      if (p->numOfPages == 32)
+      if (p->pid > 2 && p->numOfPages == 32)
       {
         panic("uvmalloc: reached max of 32 pages per process");
       }
       
-      if (p->pagesOnRAM >= MAX_PHYS_PAGES)
+      if (p->pid > 2 &&p->pagesOnRAM >= MAX_PHYS_PAGES)
       {
         free_page(p); 
       }  
@@ -286,7 +296,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
         }
         
         else add_page(PGROUNDDOWN(a));
-        pte_t *pte = walk(p->pagetable, PGROUNDDOWN(a),0);
+        pte_t *pte = walk(pagetable, PGROUNDDOWN(a),0);
         *pte &= ~(PTE_PG); 
       }
     #endif
@@ -376,20 +386,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     flags = PTE_FLAGS(*pte);
     // int is_PG = (PTE_FLAGS(*pte) & PTE_PG);
 
-    #ifndef NONE
-    // Pages support
-    if (!(*pte & PTE_PG)) {
-      if((mem = kalloc()) == 0)
-        goto err;
-      memmove(mem, (char*)pa, PGSIZE);
-    }
-    #else
-    {
-      if((mem = kalloc()) == 0)
-      goto err;
-      memmove(mem, (char*)pa, PGSIZE);
-    }
-    #endif
+
+    if((mem = kalloc()) == 0)
+    goto err;
+    memmove(mem, (char*)pa, PGSIZE);
     
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);

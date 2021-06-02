@@ -113,6 +113,7 @@ void            procdump(void);
 void            procdump_test(int pid, int pid2);
 void            swapin(uint64 va);
 void            swapout(uint64 va);
+struct proc*    proc_by_pagetable(pagetable_t pagetable);
 
 // swtch.S
 void            swtch(struct context*, struct context*);

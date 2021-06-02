@@ -41,7 +41,7 @@ exec(char *path, char **argv)
   #ifndef NONE
   if (p->pid >2 && (p->numOfPages-p->pagesOnRAM >0))
   {
-    removeSwapFile(p);
+    // removeSwapFile(p);
     init_metadata(p);
   }
   #endif
