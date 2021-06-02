@@ -151,10 +151,6 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
       panic("remap");
 
     *pte = PA2PTE(pa) | perm | PTE_V;
-
-    #ifndef NONE
-     *pte &= ~PTE_PG;
-    #endif
     if(a == last)
       break;
     a += PGSIZE;
@@ -171,38 +167,48 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
   uint64 a;
   pte_t *pte;
-
+  struct proc* p =myproc();
   if((va % PGSIZE) != 0)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-    {
-      #ifndef NONE
-      if((*pte & PTE_PG) == 0)
-        panic("uvmunmap: not on disk and not on ram");
-      #endif 
-      panic("uvmunmap: not mapped");
-    }
-    if(PTE_FLAGS(*pte) == PTE_V)
-      panic("uvmunmap: not a leaf");
-    if(do_free){
-      #ifndef NONE
-      if ((*pte & PTE_PG) == 0)
-      {
-        uint64 pa = PTE2PA(*pte);
+      
+      if((pte = walk(pagetable, a, 0)) == 0)
+        panic("uvmunmap: walk");
+      if((*pte & PTE_V) == 0)
+        panic("uvmunmap: not mapped");
+      if(PTE_FLAGS(*pte) == PTE_V)
+        panic("uvmunmap: not a leaf");
+    int index = -2;
+    #ifndef NONE
+    if(p->pid >2){
+      index = find_existing_page(1, va);
+      if(index > -1){
+      if((*pte & PTE_PG))
+        panic("uvmunmap: page is on ran and PTE_PG is on");
+      restart_page(myproc(), index, 1);
+      }}
+      #endif
+      uint64 pa = PTE2PA(*pte);
+      if(do_free){
         kfree((void*)pa);
       }
-      #else
-      {
-        uint64 pa = PTE2PA(*pte);
-        kfree((void*)pa);
+      *pte = 0;
+    #ifndef NONE 
+    if(p->pid > 2){
+      if(index == -1) {
+        index = find_existing_page(0, va);
+        if(index == -1)
+          panic("uvmunmap: not on disk and not on ram");
+        if((*pte & PTE_V))
+          panic("uvmunmap: page is on disk and PTE_V is on");
+        else{
+          restart_page(myproc(), index, 0);
+        }
       }
-      #endif 
     }
-    *pte = 0;
+    #endif
+    
   }
 }
 
@@ -273,13 +279,18 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     }
     #ifndef NONE
       else if(p->pid >2)
-      {
-        // uint64 va = (uint64)walk(pagetable, PGROUNDDOWN(a), 1);
-        add_page(PGROUNDDOWN(a));
+      { 
+        if (PGROUNDDOWN(a) == 0)
+        {
+          add_page(PGROUNDDOWN(a));
+        }
+        
+        else add_page(PGROUNDDOWN(a));
+        pte_t *pte = walk(p->pagetable, PGROUNDDOWN(a),0);
+        *pte &= ~(PTE_PG); 
       }
     #endif
   }
-  
   return newsz;
 }
 

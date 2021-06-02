@@ -930,29 +930,33 @@ int init_metadata(struct proc *p){
 }
 
 
-struct metadata restart_page(struct proc* p,int index, int isram){
+void restart_page(struct proc* p,int index, int isram){
   
-  struct metadata *m=0;
   if(p->pid >2){
     
   
     if (isram)
     {
-      m = &p->ram_pages[index];
+      p->ram_pages[index].offset = -1;
+      p->ram_pages[index].va = 0;
+      p->ram_pages[index].scfifo_accessed  = 0;
+      #ifndef LAPA
+      p->ram_pages[index].age_counter = 0;
+      #else
+      p->ram_pages[index].age_counter = 0xffffffff;
+      #endif
     }
-    else m = &p->disk_pages[index];
-    
-    m->offset = -1;
-    m->va = 0;
-    m->scfifo_accessed  = 0;
-    #ifndef LAPA
-    m->age_counter = 0;
-    #else
-    m->age_counter = 0xffffffff;
-    #endif
-
+    else{
+      p->disk_pages[index].offset = -1;
+      p->disk_pages[index].va = 0;
+      p->disk_pages[index].scfifo_accessed  = 0;
+      #ifndef LAPA
+      p->disk_pages[index].age_counter = 0;
+      #else
+      p->disk_pages[index].age_counter = 0xffffffff;
+      #endif
+    } 
   }
-  return *m;
 }
 
 /*
@@ -1128,7 +1132,9 @@ swapout(uint64 first_va)
     p->disk_pages[disk_index].offset = disk_index;
     p->disk_pages[disk_index].va = first_va;
 
+    struct file *swapFile_BU = p->swapFile;
     restart_page(p,ram_index,1);
+    p->swapFile = swapFile_BU;
 
     p->pagesOnRAM--;
     sfence_vma();
