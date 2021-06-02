@@ -185,7 +185,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       }
       else
       {
-        restart_page(p, find_existing_page(0, a), 0);
+        restart_page(p, find_existing_page(p,0, a), 0);
         p->numOfPages--;
       }
       #else
@@ -213,7 +213,11 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       if(do_free){
         kfree((void*)pa);
       }
-      *pte = 0;    
+      *pte = 0;
+
+      #ifndef NONE
+        restart_page(p,find_existing_page(p,1,a),1);
+      #endif    
   }
 }
 
@@ -290,14 +294,13 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     #ifndef NONE
       else if(p->pid >2)
       { 
-        if (PGROUNDDOWN(a) == 0)
+        if (PGROUNDDOWN(a) >= 0)
         {
-          add_page(PGROUNDDOWN(a));
+          add_page(p,PGROUNDDOWN(a));
+          pte_t *pte = walk(pagetable, PGROUNDDOWN(a),0);
+        *pte &= ~(PTE_PG); 
         }
         
-        else add_page(PGROUNDDOWN(a));
-        pte_t *pte = walk(pagetable, PGROUNDDOWN(a),0);
-        *pte &= ~(PTE_PG); 
       }
     #endif
   }
@@ -311,6 +314,11 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 uint64
 uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
+  struct proc *p = proc_by_pagetable(pagetable);
+  if (!p)
+  {
+    p = myproc();
+  }
   if(newsz >= oldsz)
     return oldsz;
 
@@ -320,7 +328,7 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   }
   #ifndef NONE
   for (int i = PGROUNDDOWN(oldsz); i > PGROUNDDOWN(newsz); i -= PGSIZE) {
-      remove_page(i);
+      remove_page(p,i);
   }
   #endif
   return newsz;
@@ -377,9 +385,18 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     {
       #ifndef NONE
       if((*pte & PTE_PG) == 0)
-        panic("uvmcopy: not on disk and not on ram");
-      #endif 
-      panic("uvmcopy: page not present");
+      {
+        panic("uvmcopy: page not present");
+      }
+      else
+      {
+        // copied in metadata
+      }
+      #else
+      {
+        panic("uvmcopy: page not present");
+      }
+      #endif    
     }
       
     pa = PTE2PA(*pte);

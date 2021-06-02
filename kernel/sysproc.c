@@ -101,10 +101,13 @@ sys_procdump(void)
 {
   int pid;
   int pid2;
+  int test_case;
   if(argint(0, &pid) < 0)
     return -1;
   if(argint(1, &pid2) < 0)
   return -1;
-  procdump_test(pid,pid2);
+  if(argint(2, &test_case) < 0)
+  return -1;
+  procdump_test(pid,pid2,test_case);
   return 1;
 }

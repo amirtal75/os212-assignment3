@@ -38,14 +38,6 @@ exec(char *path, char **argv)
   if((pagetable = proc_pagetable(p)) == 0)
     goto bad;
 
-  #ifndef NONE
-  if (p->pid >2 && (p->numOfPages-p->pagesOnRAM >0))
-  {
-    // removeSwapFile(p);
-    init_metadata(p);
-  }
-  #endif
-
   // Load program into memory.
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))

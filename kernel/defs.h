@@ -110,9 +110,9 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
-void            procdump_test(int pid, int pid2);
-void            swapin(uint64 va);
-void            swapout(uint64 va);
+void            procdump_test(int pid, int pid2, int test_CASE);
+void            swapin(struct proc *p, uint64 va);
+void            swapout(struct proc *p,uint64 va);
 struct proc*    proc_by_pagetable(pagetable_t pagetable);
 
 // swtch.S

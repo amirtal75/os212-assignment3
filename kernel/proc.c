@@ -725,7 +725,7 @@ procdump(void)
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
 void
-procdump_test(int pid, int pid2)
+procdump_test(int pid, int pid2, int test_case)
 {
   #ifndef NONE
   static char *states[] = {
@@ -737,11 +737,10 @@ procdump_test(int pid, int pid2)
   };
   struct proc *p;
   char *state;
-/*
-  struct proc *parent = 0;
-  struct proc *child = 0;
-  char* parent_buffer = kalloc();
-  char* child_buffer = kalloc();*/
+
+  // struct proc *parent;
+  // struct proc *child;
+
   printf("\n");
   for(p = proc; p < &proc[NPROC]; p++){
     if (p->pid == pid)
@@ -800,37 +799,21 @@ procdump_test(int pid, int pid2)
       }
       
   }
-/*
-  //compare swap files
-  int swap_file_equality = 1;
-  for (int i = 0; i < MAX_PAGES; i++)
+  switch (test_case)
   {
-    if(readFromSwapFile(parent, parent_buffer, i*PGSIZE, PGSIZE) == -1){
-      panic("fail to read from the file");
-    }
-    if(readFromSwapFile(child, child_buffer, i*PGSIZE, PGSIZE) == -1){
-      panic("fail to read from the file");
-    }
-    for (int j = 0; j < PGSIZE; j++)
-    {
-      if (child_buffer[j] != parent_buffer[j])
-      {
-        swap_file_equality = 0;
-        break;
-      }
-    }
+  case 1:    
+    break;
+  case 2:
+    /* code */
+    break;  
+  default:
+    break;
   }
-
-  kfree(child_buffer);
-  kfree(parent_buffer);
-
-  if (swap_file_equality)
   {
-    printf("swap files are equal\n");
+    /* code */
   }
-  else printf("swap files are not equal!!!!!!!!!!!!!!!!\n");
-  */
-     #endif
+  
+  #endif
 
 }
 
@@ -962,8 +945,7 @@ void restart_page(struct proc* p,int index, int isram){
 /*
   Search for a given page
 */
-int find_existing_page(int isRam,uint64 va){
-  struct proc *p = myproc();
+int find_existing_page(struct proc* p,int isRam,uint64 va){
   
   for(int i = 0; i < MAX_PAGES; i++){
     if (isRam)
@@ -990,11 +972,14 @@ int find_existing_page(int isRam,uint64 va){
 /*
   finds empty page
 */
-int find_free_page(int isRam){
-  struct proc *p = myproc();
+int find_free_page(struct proc* p,int isRam){
   #ifdef SCFIFO
     if(isRam){
-      return (p->indexSCFIFO -1) % 16 ;
+      if (p->indexSCFIFO == 0)
+      {
+        return 15;
+      }
+      else return (p->indexSCFIFO -1) ;
     }
   #endif
   for(int i = 0; i < MAX_PAGES; i++){
@@ -1039,13 +1024,11 @@ void free_data(struct proc * p){
   a position oa a "leaf" page to insert
 */
 void
-swapin(uint64 va)
+swapin(struct proc* p, uint64 va)
 {    
-  struct proc *p = myproc();
-
   if(p->pid >2){
     
-    int disk_index = find_existing_page(0,va);
+    int disk_index = find_existing_page(p,0,va);
     if (disk_index == -1)
     {
       panic("Failed to find the page/PTE in the disk_pages array");
@@ -1076,7 +1059,7 @@ swapin(uint64 va)
       free_page(p);
     }
 
-    int ram_index = find_free_page(1);
+    int ram_index = find_free_page(p,1);
 
     mappages(p->pagetable, va, PGSIZE, (uint64)buffer, PTE_W|PTE_R|PTE_X|PTE_U);
     
@@ -1098,17 +1081,12 @@ swapin(uint64 va)
   a position oa a "leaf" page to insert
 */
 void 
-swapout(uint64 first_va)
+swapout(struct proc* p,uint64 first_va)
 {
-  struct proc *p = myproc();
   pte_t *third_va = walk(p->pagetable, first_va, 0);
   if(p->pid >2){
-    int disk_index = find_free_page(0);
+    int disk_index = find_free_page(p,0);
     int unlocked = 0;
-
-    if (!((*third_va & PTE_V) || (*third_va & PTE_PG))) {
-      panic("swapout: page isn't on ram");
-    }
 
     if (p->lock.locked)
     {
@@ -1128,7 +1106,7 @@ swapout(uint64 first_va)
       acquire(&p->lock);
     }
 
-    int ram_index = find_existing_page(1,first_va);
+    int ram_index = find_existing_page(p,1,first_va);
     *third_va &= ~PTE_V;
     *third_va |= PTE_PG;
 
@@ -1150,7 +1128,9 @@ void update_pages(struct proc *p)
 
     for (int i = 0; i < MAX_PAGES; i++)
     {
-      pte_t* pte = walk(p->pagetable, p->ram_pages[i].va,0);
+      if (p->ram_pages[i].va > -1)
+      {
+        pte_t* pte = walk(p->pagetable, p->ram_pages[i].va,0);
       #ifndef SCFIFO
         uint c = p->ram_pages[i].age_counter >> 1;
         c &= ~(1L << 32);
@@ -1168,18 +1148,18 @@ void update_pages(struct proc *p)
           }
         }  
       #endif
+      }   
     }
   }
 }
 
-void add_page(uint64 va){
-      struct proc *p = myproc();
+void add_page(struct proc* p,uint64 va){
 
   if(p->pid >2){ 
     p->numOfPages++;
     p->pagesOnRAM++;
     
-    int index = find_free_page(1);
+    int index = find_free_page(p,1);
     p->ram_pages[index].va = va;
     p->ram_pages[index].offset = index;
 
@@ -1191,20 +1171,24 @@ void add_page(uint64 va){
     #endif
     #ifdef SCFIFO
         p->ram_pages[index].scfifo_accessed = 0;
+        if (p->indexSCFIFO == 15)
+        {
+          p->indexSCFIFO = 0;
+        }
+        else  p->indexSCFIFO = (p->indexSCFIFO +1);
     #endif
   }
 }
 
-void remove_page(uint64 va){
-      struct proc *p = myproc();
+void remove_page(struct proc* p,uint64 va){
 
   if(p->pid >2){
       
     int ram_index = -1;
-    int disk_index = find_existing_page(0,va);
+    int disk_index = find_existing_page(p,0,va);
     if (disk_index != -1)
     {
-      ram_index = find_existing_page(1,va);
+      ram_index = find_existing_page(p,1,va);
     }
 
     if (ram_index != -1)
@@ -1237,12 +1221,10 @@ void remove_page(uint64 va){
 
 // which page to be swapped out according to the chosen algorithm
 
-int index_to_be_swaped()
+int index_to_be_swaped(struct proc* p)
 {
   int out = -1;
   
-  struct proc* p = myproc();
-
   #ifdef NFUA
     uint current = 0xFFFFFFFF;
     uint min = 0xFFFFFFFF;
@@ -1279,13 +1261,20 @@ int index_to_be_swaped()
       if(p->ram_pages[p->indexSCFIFO].scfifo_accessed == 0)
       {
         out = p->indexSCFIFO;
-        p->indexSCFIFO = (p->indexSCFIFO +1) % 16;
+        if (p->indexSCFIFO == 15)
+        {
+          p->indexSCFIFO = 0;
+        }
+        else  p->indexSCFIFO = (p->indexSCFIFO +1);
         return  out;
       }
       else{
         p->ram_pages[p->indexSCFIFO].scfifo_accessed = 0;
-        p->indexSCFIFO ++;
-        p->indexSCFIFO = (p->indexSCFIFO +1 ) % 16;
+        if (p->indexSCFIFO == 15)
+        {
+          p->indexSCFIFO = 0;
+        }
+        else  p->indexSCFIFO = (p->indexSCFIFO +1);
       }
     }
   #endif
@@ -1295,12 +1284,12 @@ int index_to_be_swaped()
 void free_page(struct proc* p)
 {
   if(p->pid >2){
-    int lowest_age = index_to_be_swaped();
+    int lowest_age = index_to_be_swaped(p);
     if (lowest_age == -1)
     {
       panic("no pages on ram to move to file");
     }
-    swapout(p->ram_pages[lowest_age].va);
+    swapout(p,p->ram_pages[lowest_age].va);
   }
 }
 //$$$$ index scfifo when do we need to inc and dec && tests && gdb

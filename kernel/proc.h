@@ -136,12 +136,12 @@ void restart_page(struct proc *p, int index, int isram);
 void copy_metadata(struct proc *p,struct proc *np);
 void copy_file(struct proc *p,struct proc *np);
 void update_pages(struct proc *p);
-void add_page(uint64 va);
-void remove_page(uint64 va);
-int index_to_be_swaped();
+void add_page(struct proc* p,uint64 va);
+void remove_page(struct proc* p,uint64 va);
+int index_to_be_swaped(struct proc* p);
 void free_page(struct proc* p);
 void free_data(struct proc * p);
-int find_existing_page(int isRam,uint64 va);
-int find_free_page(int isRam);
+int find_existing_page(struct proc* p,int isRam,uint64 va);
+int find_free_page(struct proc* p,int isRam);
 #endif
 
