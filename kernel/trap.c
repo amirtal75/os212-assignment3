@@ -124,6 +124,8 @@ usertrap(void)
   if(which_dev == 2)
     yield();
 
+            // fix_meta(p);
+
   usertrapret();
 }
 

@@ -215,9 +215,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       }
       *pte = 0;
 
-      #ifndef NONE
-        restart_page(p,find_existing_page(p,1,a),1);
-      #endif    
+      // #ifndef NONE
+      //   restart_page(p,find_existing_page(p,1,a),1);
+      // #endif    
   }
 }
 
@@ -265,6 +265,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   }
   
   #endif
+
+  
   if(newsz < oldsz)
     return oldsz;
   oldsz = PGROUNDUP(oldsz);
@@ -274,7 +276,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       {
         panic("uvmalloc: reached max of 32 pages per process");
       }
-      
+      fix_meta(p);
       if (p->pid > 2 &&p->pagesOnRAM >= MAX_PHYS_PAGES)
       {
         free_page(p); 

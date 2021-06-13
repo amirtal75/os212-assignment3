@@ -758,45 +758,45 @@ procdump_test(int pid, int pid2, int test_case)
         printf("metadata RAM\n");
         for (int i = 0; i < MAX_PAGES; i++)
         {
-          printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
+          printf("index[%d]: va: %x, offest: %d, age_counter: %x , scfifo_accessed: %d\n",
           i, p->ram_pages[i].va, p->ram_pages[i].offset, p->ram_pages[i].age_counter, 
           p->ram_pages[i].scfifo_accessed);
         }
         printf("metadata DISK\n");
         for (int i = 0; i < MAX_PAGES; i++)
         {
-          printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
+          printf("index[%d]: va: %x, offest: %d, age_counter: %x , scfifo_accessed: %d\n",
           i, p->disk_pages[i].va, p->disk_pages[i].offset, p->disk_pages[i].age_counter, 
           p->disk_pages[i].scfifo_accessed);
         }
     }
-    if (p->pid == pid2)
-    {
-      // child = p;
-      if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
-        state = states[p->state];
-      else
-        state = "???";
-      printf("pid: %d, state: %s, name: %s", p->pid, state, p->name);
-      printf("\n");
-        printf("numOfPages: %d, pagesOnRAM: %d, indexSCFIFO: %d\n", 
-        p->numOfPages, p->pagesOnRAM, p->indexSCFIFO);
+    // if (p->pid == pid2)
+    // {
+    //   // child = p;
+    //   if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+    //     state = states[p->state];
+    //   else
+    //     state = "???";
+    //   printf("pid: %d, state: %s, name: %s", p->pid, state, p->name);
+    //   printf("\n");
+    //     printf("numOfPages: %d, pagesOnRAM: %d, indexSCFIFO: %d\n", 
+    //     p->numOfPages, p->pagesOnRAM, p->indexSCFIFO);
 
-        printf("metadata RAM\n");
-        for (int i = 0; i < MAX_PAGES; i++)
-        {
-          printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
-          i, p->ram_pages[i].va, p->ram_pages[i].offset, p->ram_pages[i].age_counter, 
-          p->ram_pages[i].scfifo_accessed);
-        }
-        printf("metadata DISK\n"); 
-        for (int i = 0; i < MAX_PAGES; i++)
-        {
-          printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
-          i, p->disk_pages[i].va, p->disk_pages[i].offset, p->disk_pages[i].age_counter, 
-          p->disk_pages[i].scfifo_accessed);
-        }
-      }
+    //     printf("metadata RAM\n");
+    //     for (int i = 0; i < MAX_PAGES; i++)
+    //     {
+    //       printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
+    //       i, p->ram_pages[i].va, p->ram_pages[i].offset, p->ram_pages[i].age_counter, 
+    //       p->ram_pages[i].scfifo_accessed);
+    //     }
+    //     printf("metadata DISK\n"); 
+    //     for (int i = 0; i < MAX_PAGES; i++)
+    //     {
+    //       printf("index[%d]: va: %x, offest: %d, age_counter: %d , scfifo_accessed: %d\n",
+    //       i, p->disk_pages[i].va, p->disk_pages[i].offset, p->disk_pages[i].age_counter, 
+    //       p->disk_pages[i].scfifo_accessed);
+    //     }
+    //   }
       
   }
   switch (test_case)
@@ -975,11 +975,30 @@ int find_existing_page(struct proc* p,int isRam,uint64 va){
 int find_free_page(struct proc* p,int isRam){
   #ifdef SCFIFO
     if(isRam){
-      if (p->indexSCFIFO == 0)
+      if (p->numOfPages < MAX_PAGES)
       {
-        return 15;
+        for (int i = 15; i >= 0; i--)
+        {
+          if (p->ram_pages[i].offset != -1)
+          {
+            p->indexSCFIFO = i;
+            break;
+          }
+        }
       }
-      else return (p->indexSCFIFO -1) ;
+      else if (p->numOfPages == MAX_PAGES)
+      {
+        p->indexSCFIFO = 1;
+      }
+      else
+      {
+        if (p->indexSCFIFO == 0)
+        {
+          return 15;
+        }
+        // else return (p->indexSCFIFO -1) ;
+        else return (p->indexSCFIFO-1) ;
+      }
     }
   #endif
   for(int i = 0; i < MAX_PAGES; i++){
@@ -1099,8 +1118,8 @@ swapout(struct proc* p,uint64 first_va)
     }
     //uvmunmap(p->pagetable, first_va, 1, 1);
 
-    //kfree((void*)(pa));
-    //*third_va = 0;
+    // kfree((void*)(pa));
+    // *third_va = 0;
     if (unlocked)
     {
       acquire(&p->lock);
@@ -1134,13 +1153,18 @@ void update_pages(struct proc *p)
       #ifndef SCFIFO
         uint c = p->ram_pages[i].age_counter >> 1;
         c &= ~(1L << 32);
-        if((PTE_FLAGS(*pte) & PTE_A))
+        if(*pte & PTE_A)
         {
-          c |= (1L << 32);
-        }
-        p->ram_pages[i].age_counter = c;
+          c |= 0x80000000;
+          p->ram_pages[i].age_counter = c;
         *pte &= ~PTE_A;
-      
+        }
+        else
+        {
+           p->ram_pages[i].age_counter &= ~(0x80000000);
+        }
+        
+
       #else
         {
           if(*pte &= PTE_A){
@@ -1148,7 +1172,9 @@ void update_pages(struct proc *p)
           }
         }  
       #endif
-      }   
+      }
+      
+         
     }
   }
 }
@@ -1246,7 +1272,9 @@ int index_to_be_swaped(struct proc* p)
       {
         if (p->ram_pages[i].age_counter & (1L << j))
         {
+          //printf("current: %d\n", current);
           current++;
+          //printf("current: %d\n", current);
         }
       }
       if (current < min)
@@ -1265,7 +1293,8 @@ int index_to_be_swaped(struct proc* p)
         {
           p->indexSCFIFO = 0;
         }
-        else  p->indexSCFIFO = (p->indexSCFIFO +1);
+        else  p->indexSCFIFO = (p->indexSCFIFO +1); 
+               
         return  out;
       }
       else{
@@ -1285,10 +1314,12 @@ void free_page(struct proc* p)
 {
   if(p->pid >2){
     int lowest_age = index_to_be_swaped(p);
+    
     if (lowest_age == -1)
     {
       panic("no pages on ram to move to file");
     }
+    
     swapout(p,p->ram_pages[lowest_age].va);
   }
 }
@@ -1315,6 +1346,106 @@ struct proc* proc_by_pagetable(pagetable_t pagetable){
   }
   intr_on();
   return 0;
+}
+
+void fix_meta(struct proc* p){
+  #ifndef NONE
+  
+          if (p->pid > 2)
+          {
+            for (int i = 0; i < MAX_PAGES; i++)
+            {
+              if (p->ram_pages[i].va < MAXVA)
+              {
+                
+                pte_t* pte = walk(p->pagetable, p->ram_pages[i].va,0);
+                if (PTE2PA(*pte) == 0)
+                {
+                  
+                  int disk_index = find_existing_page(p,0,p->ram_pages[i].va);
+                  if (disk_index == -1)
+                  { 
+                    
+                    
+                    // printf("va = %d\n", p->ram_pages[i].va);
+                    p->ram_pages[i].offset = -1;
+                    p->ram_pages[i].va = -1;
+                    p->ram_pages[i].scfifo_accessed  = 0;
+                    #ifndef LAPA
+                    p->ram_pages[i].age_counter = 0;
+                    #else
+                    p->ram_pages[i].age_counter = 0xffffffff;
+                    #endif
+                    p->numOfPages--;
+                    p->pagesOnRAM--;
+                  }
+                }
+              }
+            }
+
+            p->pagesOnRAM = 16;
+            int numofdisk = 16;
+            int fixedram = 0;
+            for (int i = 0; i < MAX_PAGES; i++)
+            {
+              if (p->ram_pages[i].offset == -1)
+              {
+                p->pagesOnRAM--;
+                fixedram++;
+              }
+              if (p->disk_pages[i].offset == -1)
+              {
+                numofdisk--;
+              }
+
+              int j = i;
+              // int b_fofp_index = p->indexSCFIFO;
+              // int condi = 0;
+              while (j > 0 && p->numOfPages <= 16)
+              {
+                if (p->ram_pages[j-1].offset == -1 && p->ram_pages[j].offset != -1)
+                {
+                  // if (j == b_fofp_index)
+                  // {
+                  //   condi = 1;
+                  //   if (b_fofp_index == 0)
+                  //   {
+                  //     b_fofp_index = 15;
+                  //   }
+                  //   else  b_fofp_index = (b_fofp_index -1);
+                  // }
+                  
+                  p->ram_pages[j-1].va = p->ram_pages[j].va;    
+                  p->ram_pages[j-1].offset = p->ram_pages[j].offset -1;
+                  p->ram_pages[j-1].age_counter = p->ram_pages[j].age_counter;
+                  p->ram_pages[j-1].scfifo_accessed = p->ram_pages[j].scfifo_accessed;
+                  restart_page(p,j,1);
+                }
+                j--;                
+              }
+              // if (condi == 1)
+              // {
+              //   p->indexSCFIFO = b_fofp_index;
+              // }
+            }
+            
+            if (p->pagesOnRAM < MAX_PAGES)
+            {
+              for (int i = 15; i >= 0; i--)
+              {
+                if (p->ram_pages[i].offset != -1)
+                {
+                  p->indexSCFIFO = i;
+                  break;
+                }
+              }
+            }
+            
+            p->numOfPages = p->pagesOnRAM+numofdisk;
+
+            
+          }
+          #endif
 }
 #endif
 

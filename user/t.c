@@ -68,26 +68,97 @@ void swapin_test()
 
 void fifo_test()
 {
+    printf("***************start fifo test**************\n");
+
     char* pages[16];
     for (int i = 0; i < 16; i++)
     {
+        procdump(getpid(),getpid(),0);
         pages[i] = (char*)sbrk(4096);
     }
     printf("created 16 pages, the first addr is : %x\n",pages[0]);
+    procdump(getpid(),getpid(),0);
 
+    printf("completed fifo\n");
 
 }
+
+void nfua_test()
+{
+    printf("***************start nfua test**************\n");
+
+    char* pages[16];
+    for (int i = 0; i < 16; i++)
+    {
+        // procdump(getpid(),getpid(),0);
+        pages[i] = (char*)sbrk(4096);
+    }
+    printf("created 16 pages, the first addr is : %x\n",pages[0]);
+    procdump(getpid(),getpid(),0);
+    printf("page %d: equals %d\n", 0, *pages[0]);
+    // acces allp pages but the first
+    for (int i = 1; i < 16; i++)
+    {
+        
+        *pages[i]='A';
+        sleep(5);
+    }
+    procdump(getpid(),getpid(),0);
+    printf("page %d: equals %d\n", 0, *pages[0]);
+
+    printf("trying to acces page on disk\n\n\n");
+    for (int i = 15; i >= 0; i--)
+    {
+        printf("page %d: equals %d\n", i, *pages[i]);
+    }
+    procdump(getpid(),getpid(),0);
+    printf("completed nfua\n");
+
+}
+
+void lapa_test()
+{
+    printf("***************start lapa test**************\n");
+
+    char* pages[16];
+    for (int i = 0; i < 16; i++)
+    {
+        // procdump(getpid(),getpid(),0);
+        pages[i] = (char*)sbrk(4096);
+    }
+    printf("created 16 pages, the first addr is : %x\n",pages[0]);
+    procdump(getpid(),getpid(),0);
+    // acces allp pages but the first
+    for (int i = 1; i < 16; i++)
+    {
+        *pages[i]='A';
+        sleep(5);
+    }
+    procdump(getpid(),getpid(),0);
+
+    printf("trying to acces page on disk\n\n\n");
+    for (int i = 15; i >= 0; i--)
+    {
+        printf("page %d: equals %d\n", i, *pages[i]);
+    }
+    procdump(getpid(),getpid(),0);
+    printf("completed lapa\n");
+
+}
+
 int
 main(int argc, char *argv[])
 {   
-    // init_test();
-    // printf("done init\n");
+    init_test();
+    printf("done init\n");
     
-    // test_fork();
+    test_fork();
 
-    // add_test();
+    add_test();
     fifo_test();
-
+    nfua_test();
+    lapa_test();
+    printf("all tests completed\n");
     exit(1);
     
 }

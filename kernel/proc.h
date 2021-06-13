@@ -143,5 +143,6 @@ void free_page(struct proc* p);
 void free_data(struct proc * p);
 int find_existing_page(struct proc* p,int isRam,uint64 va);
 int find_free_page(struct proc* p,int isRam);
+void fix_meta(struct proc* p);
 #endif
 
